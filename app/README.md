@@ -32,16 +32,40 @@ flutter build ios --debug --no-codesign
 ## Key Dependencies
 
 - `flutter_webrtc`: WebRTC audio transport (primary)
-- `http`: REST client for token service
-- Additional dependencies will be added as features are implemented
+- `web_socket_channel`: WebSocket fallback transport
+- `http`: REST client for token service communication
+- `provider`: State management for real-time sessions
+- `logging`: Debug logging for transport connections
 
 ## Development
 
 The app follows Flutter best practices:
-- State management with Provider/Riverpod
-- Platform-specific audio handling
-- WebRTC-first with WebSocket fallback
-- Ephemeral token authentication
+- State management with Provider pattern
+- Platform-specific audio handling (microphone permissions)
+- WebRTC-first transport with automatic WebSocket fallback
+- Ephemeral token authentication via backend service
+
+### Transport Architecture
+
+The app uses a dual-transport approach:
+
+- **WebRTC (Primary)**: Low-latency peer connection for optimal audio quality
+- **WebSocket (Fallback)**: Reliable connection for restrictive networks (China/Korea)
+- **Automatic Failover**: Seamless switching when WebRTC connection fails
+- **Manual Override**: Travel Mode forces WebSocket for problematic regions
+
+### Audio Pipeline
+
+- **Input**: 16kHz PCM16 mono audio from device microphone
+- **Processing**: Echo cancellation, noise suppression, auto-gain control
+- **Streaming**: Real-time audio chunks sent to OpenAI Realtime API
+- **Output**: Streamed audio deltas for immediate playback
+
+### Client Classes
+
+- `WebRTCClient`: Primary low-latency transport implementation
+- `WebSocketClient`: Fallback transport with automatic reconnection
+- `TransportManager`: Orchestrates transport selection and failover
 
 ## Testing
 

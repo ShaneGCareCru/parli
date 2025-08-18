@@ -35,6 +35,21 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
 
+  # WebRTC for low-latency audio transport (primary)
+  flutter_webrtc: ^0.10.7
+
+  # HTTP client for token service communication
+  http: ^1.1.0
+
+  # WebSocket client for fallback transport
+  web_socket_channel: ^2.4.0
+
+  # State management for real-time session handling
+  provider: ^6.1.1
+
+  # Logging for debugging WebRTC/WebSocket connections
+  logging: ^1.2.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -45,6 +60,10 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
+
+  # Mocking for unit tests
+  mockito: ^5.4.4
+  build_runner: ^2.4.7
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
