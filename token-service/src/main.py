@@ -55,11 +55,12 @@ async def create_ephemeral_token():
             logger.error("OpenAI API key not configured")
             raise HTTPException(status_code=500, detail="Service configuration error")
 
-        # Initialize OpenAI client
-        client = openai.AsyncOpenAI(api_key=api_key)
+        # TODO: Initialize OpenAI client when ephemeral token API becomes available
+        # client = openai.AsyncOpenAI(api_key=api_key)
 
-        # For now, return the API key directly (ephemeral tokens not yet available from OpenAI)
-        # TODO: Replace with actual ephemeral token API when available
+        # SECURITY WARNING: Returning API key directly is temporary and MUST be replaced
+        # before production deployment. This violates security guidelines.
+        # TODO: Replace with actual ephemeral token API when available from OpenAI
         expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
 
         logger.info(f"Created ephemeral token, expires at: {expires_at}")
