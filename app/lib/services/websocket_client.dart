@@ -32,6 +32,7 @@ class WebSocketClient {
   Stream<WebSocketConnectionState> get connectionState => _stateController.stream;
   
   WebSocketConnectionState _currentState = WebSocketConnectionState.disconnected;
+  bool _isClosing = false;
   
   /// Current connection state
   WebSocketConnectionState get state => _currentState;
@@ -168,8 +169,8 @@ class WebSocketClient {
     _stopHeartbeat();
     _updateState(WebSocketConnectionState.disconnected);
     
-    // Only attempt reconnection if we haven't been explicitly closed
-    if (_currentState != WebSocketConnectionState.disconnected || _reconnectAttempts < _maxReconnectAttempts) {
+    // Only attempt reconnection if we haven't been explicitly closed and haven't exceeded max attempts
+    if (!_isClosing && _reconnectAttempts < _maxReconnectAttempts) {
       _scheduleReconnect();
     }
   }
@@ -184,9 +185,12 @@ class WebSocketClient {
   
   /// Schedule automatic reconnection with exponential backoff
   Future<void> _scheduleReconnect() async {
-    if (_reconnectAttempts >= _maxReconnectAttempts) {
-      _logger.severe('Max reconnection attempts reached, giving up');
-      _updateState(WebSocketConnectionState.failed);
+    // Don't schedule reconnection if explicitly closing or max attempts reached
+    if (_isClosing || _reconnectAttempts >= _maxReconnectAttempts) {
+      if (_reconnectAttempts >= _maxReconnectAttempts) {
+        _logger.severe('Max reconnection attempts reached, giving up');
+        _updateState(WebSocketConnectionState.failed);
+      }
       return;
     }
     
@@ -197,7 +201,8 @@ class WebSocketClient {
     
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer(delay, () {
-      if (_currentState != WebSocketConnectionState.connected) {
+      // Double-check we're not closing and still need to reconnect
+      if (!_isClosing && _currentState != WebSocketConnectionState.connected) {
         _performConnection();
       }
     });
@@ -315,8 +320,12 @@ class WebSocketClient {
   Future<void> close() async {
     _logger.info('Closing WebSocket connection');
     
+    // Set closing flag to prevent reconnection attempts
+    _isClosing = true;
+    
     _stopHeartbeat();
     _reconnectTimer?.cancel();
+    _reconnectTimer = null;
     
     _updateState(WebSocketConnectionState.disconnected);
     

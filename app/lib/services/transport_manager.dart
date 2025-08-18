@@ -91,11 +91,7 @@ class TransportManager {
       }
       
       if (!connected) {
-        _updateStatus(TransportStatus(
-          activeTransport: TransportType.none,
-          state: TransportState.failed,
-          error: 'All transport methods failed',
-        ));
+        await _handleCompoundFailure();
         throw Exception('Failed to establish connection with any transport');
       }
     } finally {
@@ -176,13 +172,9 @@ class TransportManager {
     _websocketStateSub = _websocketClient!.connectionState.listen((state) {
       if (state == WebSocketConnectionState.failed) {
         _logger.severe('WebSocket connection failed permanently - all transport options exhausted');
-        // Update state through proper state management instead of direct assignment
-        _activeTransport = TransportType.none;
-        _updateStatus(TransportStatus(
-          activeTransport: TransportType.none,
-          state: TransportState.failed,
-          error: 'All transport methods have failed - WebSocket connection lost permanently',
-        ));
+        // Use proper state management to prevent race conditions
+        _updateTransportState(TransportType.none, TransportState.failed, 
+          'All transport methods have failed - WebSocket connection lost permanently');
       } else if (state == WebSocketConnectionState.error) {
         _logger.warning('WebSocket connection error - may recover');
         _updateStatus(TransportStatus(
@@ -216,7 +208,7 @@ class TransportManager {
         throw StateError('No token available for failover');
       }
       
-      if (DateTime.now().isAfter(_tokenExpiry!)) {
+      if (DateTime.now().toUtc().isAfter(_tokenExpiry!.toUtc())) {
         throw StateError('Token expired, cannot perform failover. New token required.');
       }
       
@@ -232,6 +224,7 @@ class TransportManager {
       _webrtcMessageSub = null;
       _webrtcAudioSub = null;
       
+      // Use proper state management for failover completion
       _activeTransport = TransportType.webSocket;
       _updateStatus(TransportStatus(
         activeTransport: TransportType.webSocket,
@@ -243,11 +236,7 @@ class TransportManager {
       
     } catch (e) {
       _logger.severe('Failover to WebSocket failed: $e');
-      _updateStatus(TransportStatus(
-        activeTransport: TransportType.none,
-        state: TransportState.failed,
-        error: 'Failover failed: $e',
-      ));
+      await _handleCompoundFailure(additionalError: 'Failover failed: $e');
     } finally {
       _isFailoverInProgress = false;
     }
@@ -335,6 +324,64 @@ class TransportManager {
   /// Update transport status and notify listeners
   void _updateStatus(TransportStatus status) {
     _statusController.add(status);
+  }
+
+  /// Update transport state with proper synchronization
+  void _updateTransportState(TransportType transport, TransportState state, [String? error]) {
+    _activeTransport = transport;
+    _updateStatus(TransportStatus(
+      activeTransport: transport,
+      state: state,
+      error: error,
+    ));
+  }
+
+  /// Handle compound failure when both transports fail
+  Future<void> _handleCompoundFailure({String? additionalError}) async {
+    _logger.severe('Compound transport failure - both WebRTC and WebSocket failed');
+    
+    // Clean up any remaining resources
+    await _cleanupAllResources();
+    
+    // Update state to failed with comprehensive error message
+    final errorMessage = [
+      'All transport methods failed',
+      if (additionalError != null) additionalError,
+      'Network may be unreachable or authentication invalid'
+    ].join(' - ');
+    
+    _updateTransportState(TransportType.none, TransportState.failed, errorMessage);
+  }
+
+  /// Clean up all transport resources
+  Future<void> _cleanupAllResources() async {
+    try {
+      // Cancel all subscriptions
+      await _webrtcStateSub?.cancel();
+      await _webrtcMessageSub?.cancel();
+      await _webrtcAudioSub?.cancel();
+      await _websocketStateSub?.cancel();
+      await _websocketMessageSub?.cancel();
+      await _websocketAudioSub?.cancel();
+      
+      // Close clients
+      await _webrtcClient?.close();
+      await _websocketClient?.close();
+      
+      // Clear references
+      _webrtcClient = null;
+      _websocketClient = null;
+      _webrtcStateSub = null;
+      _webrtcMessageSub = null;
+      _webrtcAudioSub = null;
+      _websocketStateSub = null;
+      _websocketMessageSub = null;
+      _websocketAudioSub = null;
+      
+      _logger.info('All transport resources cleaned up');
+    } catch (e) {
+      _logger.warning('Error during resource cleanup: $e');
+    }
   }
   
   /// Close all connections and cleanup
