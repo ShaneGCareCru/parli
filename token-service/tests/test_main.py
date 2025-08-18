@@ -11,6 +11,7 @@ from src.main import app
 
 client = TestClient(app)
 
+
 def test_health_check():
     """Test health check endpoint"""
     response = client.get("/healthz")
@@ -18,6 +19,7 @@ def test_health_check():
     data = response.json()
     assert data["status"] == "healthy"
     assert "timestamp" in data
+
 
 @patch.dict(os.environ, {"OPENAI_API_KEY": "test_key"})
 def test_create_ephemeral_token_success():
@@ -27,6 +29,7 @@ def test_create_ephemeral_token_success():
     data = response.json()
     assert "token" in data
     assert "expires_at" in data
+
 
 def test_create_ephemeral_token_no_api_key():
     """Test token creation without API key"""

@@ -6,7 +6,7 @@ FastAPI backend for ephemeral OpenAI token generation
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
 import openai
 import logging
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Parli Token Service",
     description="Ephemeral token service for Parli voice translator",
-    version="1.0.0"
+    version="1.0.0",
 )
 
 # CORS middleware for mobile app access
@@ -30,14 +30,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 class TokenResponse(BaseModel):
     token: str
     expires_at: datetime
 
+
 @app.get("/healthz")
 async def health_check():
     """Health check endpoint"""
-    return {"status": "healthy", "timestamp": datetime.utcnow()}
+    return {"status": "healthy", "timestamp": datetime.now(timezone.utc)}
+
 
 @app.post("/realtime/ephemeral", response_model=TokenResponse)
 async def create_ephemeral_token():
@@ -51,25 +54,29 @@ async def create_ephemeral_token():
         if not api_key:
             logger.error("OpenAI API key not configured")
             raise HTTPException(status_code=500, detail="Service configuration error")
-        
+
         # Initialize OpenAI client
         client = openai.AsyncOpenAI(api_key=api_key)
-        
+
         # For now, return the API key directly (ephemeral tokens not yet available from OpenAI)
         # TODO: Replace with actual ephemeral token API when available
-        expires_at = datetime.utcnow() + timedelta(minutes=5)
-        
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+
         logger.info(f"Created ephemeral token, expires at: {expires_at}")
-        
+
         return TokenResponse(
             token=api_key,  # Temporary: replace with ephemeral token
-            expires_at=expires_at
+            expires_at=expires_at,
         )
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to create ephemeral token: {str(e)}")
         raise HTTPException(status_code=500, detail="Token creation failed")
 
+
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)
