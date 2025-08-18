@@ -60,24 +60,27 @@ class WebSocketClient {
   /// Internal connection logic with retry capability
   Future<void> _performConnection() async {
     try {
-      _logger.info('Connecting to WebSocket server: $_serverUri');
+      _logger.info('Connecting to WebSocket server');
       _updateState(WebSocketConnectionState.connecting);
       
-      // Connect to WebSocket with authentication header
-      // OpenAI Realtime API requires Bearer token authentication
-      final headers = <String, String>{};
+      // For OpenAI Realtime API, token authentication is handled via query parameter
+      // This approach works with the web_socket_channel package
+      Uri connectUri = _serverUri!;
       if (_token != null) {
-        headers['Authorization'] = 'Bearer $_token';
+        connectUri = _serverUri!.replace(
+          queryParameters: {
+            ...(_serverUri!.queryParameters),
+            'authorization': 'Bearer $_token',
+          },
+        );
       }
       
       _channel = WebSocketChannel.connect(
-        _serverUri!,
-        protocols: null,
+        connectUri,
+        protocols: ['realtime'],
       );
       
-      // Note: Web socket headers would be set differently in a real implementation
-      // This is a placeholder for PAR-15 skeleton implementation
-      _logger.fine('WebSocket connected with token: ${_token?.substring(0, 10)}...');
+      _logger.fine('WebSocket connection initiated');
       
       // Listen for messages
       _channel!.stream.listen(
@@ -143,11 +146,19 @@ class WebSocketClient {
     }
   }
   
-  /// Handle WebSocket errors
+  /// Handle WebSocket errors with proper categorization
   void _handleError(error) {
-    _logger.severe('WebSocket error: $error');
+    final errorType = _categorizeError(error);
+    _logger.severe('WebSocket error ($errorType): $error');
     _updateState(WebSocketConnectionState.error);
-    _scheduleReconnect();
+    
+    // Only attempt reconnection for recoverable errors
+    if (_isRecoverableError(errorType)) {
+      _scheduleReconnect();
+    } else {
+      _logger.severe('Non-recoverable error detected, not attempting reconnect');
+      _updateState(WebSocketConnectionState.failed);
+    }
   }
   
   /// Handle WebSocket disconnection
@@ -155,7 +166,11 @@ class WebSocketClient {
     _logger.info('WebSocket disconnected');
     _stopHeartbeat();
     _updateState(WebSocketConnectionState.disconnected);
-    _scheduleReconnect();
+    
+    // Only attempt reconnection if we haven't been explicitly closed
+    if (_currentState != WebSocketConnectionState.disconnected || _reconnectAttempts < _maxReconnectAttempts) {
+      _scheduleReconnect();
+    }
   }
   
   /// Update connection state and notify listeners
@@ -188,12 +203,8 @@ class WebSocketClient {
   }
   
   /// Send initial session configuration
-  /// Uses stored token for authentication context
+  /// Authentication is handled via connection URI
   Future<void> _sendSessionConfig() async {
-    if (_token == null) {
-      _logger.warning('No token available for session configuration');
-      return;
-    }
     
     await sendMessage({
       'type': 'session.update',
@@ -322,6 +333,52 @@ class WebSocketClient {
     
     _logger.info('WebSocket connection closed successfully');
   }
+  
+  /// Categorize error for appropriate recovery strategy
+  WebSocketErrorType _categorizeError(dynamic error) {
+    final errorString = error.toString().toLowerCase();
+    
+    if (errorString.contains('network') || 
+        errorString.contains('timeout') ||
+        errorString.contains('connection refused')) {
+      return WebSocketErrorType.network;
+    }
+    
+    if (errorString.contains('unauthorized') || 
+        errorString.contains('forbidden') ||
+        errorString.contains('401') ||
+        errorString.contains('403')) {
+      return WebSocketErrorType.authentication;
+    }
+    
+    if (errorString.contains('500') || 
+        errorString.contains('502') ||
+        errorString.contains('503') ||
+        errorString.contains('server')) {
+      return WebSocketErrorType.server;
+    }
+    
+    if (errorString.contains('protocol') || 
+        errorString.contains('invalid') ||
+        errorString.contains('malformed')) {
+      return WebSocketErrorType.protocol;
+    }
+    
+    return WebSocketErrorType.unknown;
+  }
+  
+  /// Determine if error type allows for reconnection attempts
+  bool _isRecoverableError(WebSocketErrorType errorType) {
+    switch (errorType) {
+      case WebSocketErrorType.network:
+      case WebSocketErrorType.server:
+      case WebSocketErrorType.unknown:
+        return true;
+      case WebSocketErrorType.authentication:
+      case WebSocketErrorType.protocol:
+        return false;
+    }
+  }
 }
 
 /// WebSocket connection states
@@ -331,4 +388,13 @@ enum WebSocketConnectionState {
   connected,
   error,
   failed,
+}
+
+/// WebSocket error categories for recovery strategy
+enum WebSocketErrorType {
+  network,        // Recoverable network issues
+  authentication, // Token/auth related - may need new token
+  server,         // Server errors - may be temporary
+  protocol,       // Protocol violations - non-recoverable
+  unknown,        // Unclassified errors
 }

@@ -101,4 +101,38 @@ void main() {
       expect(TransportState.values, contains(TransportState.failed));
     });
   });
+  
+  group('Enhanced Error Handling', () {
+    test('should handle connection failures gracefully', () async {
+      final failureManager = TransportManager();
+      
+      try {
+        // Test with completely invalid token/URL
+        await failureManager.connect(token: 'invalid-token');
+        // If no exception is thrown, we still need to verify proper handling
+        expect(failureManager.activeTransport, isNot(equals(TransportType.none)));
+      } catch (e) {
+        // Expected behavior - connection should fail with invalid token
+        expect(e, isA<Exception>());
+        expect(e.toString(), contains('Failed to establish connection'));
+      }
+      
+      await failureManager.close();
+    });
+    
+    test('should validate transport switching logic', () async {
+      final switchingManager = TransportManager();
+      
+      expect(switchingManager.activeTransport, equals(TransportType.none));
+      expect(switchingManager.preferredTransport, equals(TransportType.webrtc));
+      
+      // Test that manual switching throws UnimplementedError for now
+      expect(
+        () => switchingManager.switchTransport(TransportType.webSocket),
+        throwsA(isA<UnimplementedError>()),
+      );
+      
+      await switchingManager.close();
+    });
+  });
 }

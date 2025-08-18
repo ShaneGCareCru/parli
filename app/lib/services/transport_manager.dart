@@ -16,7 +16,9 @@ class TransportManager {
   TransportType _activeTransport = TransportType.none;
   TransportType _preferredTransport = TransportType.webrtc;
   
-  String? _currentToken; // Store current token for failover
+  // Secure token storage with expiration tracking
+  String? _currentToken;
+  DateTime? _tokenExpiry;
   StreamSubscription? _webrtcMessageSub;
   StreamSubscription? _webrtcAudioSub;
   StreamSubscription? _webrtcStateSub;
@@ -59,8 +61,9 @@ class TransportManager {
   }) async {
     _logger.info('Connecting with transport manager');
     
-    // Store token for potential failover use
+    // Store token with 5-minute expiration for failover use (per CLAUDE.md)
     _currentToken = token;
+    _tokenExpiry = DateTime.now().add(const Duration(minutes: 5));
     
     _preferredTransport = preferWebSocket ? TransportType.webSocket : TransportType.webrtc;
     
@@ -158,10 +161,20 @@ class TransportManager {
     
     // Monitor connection state for failover
     _websocketStateSub = _websocketClient!.connectionState.listen((state) {
-      if (state == WebSocketConnectionState.failed ||
-          state == WebSocketConnectionState.error) {
-        _logger.warning('WebSocket connection lost');
-        // Could attempt WebRTC failover here if needed
+      if (state == WebSocketConnectionState.failed) {
+        _logger.severe('WebSocket connection failed permanently');
+        _updateStatus(TransportStatus(
+          activeTransport: TransportType.webSocket,
+          state: TransportState.failed,
+          error: 'WebSocket connection failed',
+        ));
+      } else if (state == WebSocketConnectionState.error) {
+        _logger.warning('WebSocket connection error - may recover');
+        _updateStatus(TransportStatus(
+          activeTransport: TransportType.webSocket,
+          state: TransportState.error,
+          error: 'WebSocket connection error',
+        ));
       }
     });
     
@@ -177,9 +190,13 @@ class TransportManager {
     _logger.info('Performing automatic failover to WebSocket');
     
     try {
-      // Use stored token for failover
-      if (_currentToken == null) {
-        throw StateError('No token available for failover - token has expired or not set');
+      // Check token availability and expiration
+      if (_currentToken == null || _tokenExpiry == null) {
+        throw StateError('No token available for failover');
+      }
+      
+      if (DateTime.now().isAfter(_tokenExpiry!)) {
+        throw StateError('Token expired, cannot perform failover. New token required.');
       }
       
       await _connectWebSocket(_currentToken!);
@@ -290,7 +307,7 @@ class TransportManager {
     await _webrtcClient?.close();
     await _websocketClient?.close();
     
-    // Clear references
+    // Clear references and securely clear token
     _webrtcClient = null;
     _websocketClient = null;
     _webrtcStateSub = null;
@@ -299,7 +316,10 @@ class TransportManager {
     _websocketStateSub = null;
     _websocketMessageSub = null;
     _websocketAudioSub = null;
+    
+    // Securely clear token and expiry
     _currentToken = null;
+    _tokenExpiry = null;
     _activeTransport = TransportType.none;
     
     await _messageController.close();
