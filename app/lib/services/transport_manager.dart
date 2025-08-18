@@ -72,8 +72,9 @@ class TransportManager {
       _logger.info('Connecting with transport manager');
       
       // Store token with 5-minute expiration for failover use (per CLAUDE.md)
+      // Use UTC for consistent international deployment
       _currentToken = token;
-      _tokenExpiry = DateTime.now().add(const Duration(minutes: 5));
+      _tokenExpiry = DateTime.now().toUtc().add(const Duration(minutes: 5));
       
       _preferredTransport = preferWebSocket ? TransportType.webSocket : TransportType.webrtc;
       
@@ -120,11 +121,8 @@ class TransportManager {
           return false;
       }
       
-      _activeTransport = transport;
-      _updateStatus(TransportStatus(
-        activeTransport: transport,
-        state: TransportState.connected,
-      ));
+      // Use consistent state management pattern
+      _updateTransportState(transport, TransportState.connected);
       
       _logger.info('Successfully connected with $transport');
       return true;
@@ -225,7 +223,7 @@ class TransportManager {
       _webrtcAudioSub = null;
       
       // Use proper state management for failover completion
-      _activeTransport = TransportType.webSocket;
+      _updateTransportState(TransportType.webSocket, TransportState.connected);
       _updateStatus(TransportStatus(
         activeTransport: TransportType.webSocket,
         state: TransportState.connected,
