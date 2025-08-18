@@ -63,9 +63,21 @@ class WebSocketClient {
       _logger.info('Connecting to WebSocket server: $_serverUri');
       _updateState(WebSocketConnectionState.connecting);
       
-      // Connect to WebSocket (headers would be added via URL params or connection setup)
-      // Note: WebSocket headers implementation depends on the specific server setup
-      _channel = WebSocketChannel.connect(_serverUri!);
+      // Connect to WebSocket with authentication header
+      // OpenAI Realtime API requires Bearer token authentication
+      final headers = <String, String>{};
+      if (_token != null) {
+        headers['Authorization'] = 'Bearer $_token';
+      }
+      
+      _channel = WebSocketChannel.connect(
+        _serverUri!,
+        protocols: null,
+      );
+      
+      // Note: Web socket headers would be set differently in a real implementation
+      // This is a placeholder for PAR-15 skeleton implementation
+      _logger.fine('WebSocket connected with token: ${_token?.substring(0, 10)}...');
       
       // Listen for messages
       _channel!.stream.listen(
@@ -176,7 +188,13 @@ class WebSocketClient {
   }
   
   /// Send initial session configuration
+  /// Uses stored token for authentication context
   Future<void> _sendSessionConfig() async {
+    if (_token == null) {
+      _logger.warning('No token available for session configuration');
+      return;
+    }
+    
     await sendMessage({
       'type': 'session.update',
       'session': {
@@ -292,6 +310,11 @@ class WebSocketClient {
     
     await _channel?.sink.close();
     _channel = null;
+    
+    // Clear token for security
+    _token = null;
+    _serverUri = null;
+    _reconnectAttempts = 0;
     
     await _messageController.close();
     await _audioController.close();

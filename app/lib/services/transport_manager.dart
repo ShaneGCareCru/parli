@@ -16,6 +16,14 @@ class TransportManager {
   TransportType _activeTransport = TransportType.none;
   TransportType _preferredTransport = TransportType.webrtc;
   
+  String? _currentToken; // Store current token for failover
+  StreamSubscription? _webrtcMessageSub;
+  StreamSubscription? _webrtcAudioSub;
+  StreamSubscription? _webrtcStateSub;
+  StreamSubscription? _websocketMessageSub;
+  StreamSubscription? _websocketAudioSub;
+  StreamSubscription? _websocketStateSub;
+  
   final StreamController<Map<String, dynamic>> _messageController = 
       StreamController<Map<String, dynamic>>.broadcast();
   final StreamController<Uint8List> _audioController = 
@@ -50,6 +58,9 @@ class TransportManager {
     bool preferWebSocket = false,
   }) async {
     _logger.info('Connecting with transport manager');
+    
+    // Store token for potential failover use
+    _currentToken = token;
     
     _preferredTransport = preferWebSocket ? TransportType.webSocket : TransportType.webrtc;
     
@@ -121,12 +132,12 @@ class TransportManager {
   Future<void> _connectWebRTC(String token) async {
     _webrtcClient = WebRTCClient();
     
-    // Set up message forwarding
-    _webrtcClient!.messages.listen(_messageController.add);
-    _webrtcClient!.audioData.listen(_audioController.add);
+    // Set up message forwarding with proper subscription management
+    _webrtcMessageSub = _webrtcClient!.messages.listen(_messageController.add);
+    _webrtcAudioSub = _webrtcClient!.audioData.listen(_audioController.add);
     
     // Monitor connection state for failover
-    _webrtcClient!.connectionState.listen((state) {
+    _webrtcStateSub = _webrtcClient!.connectionState.listen((state) {
       if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
           state == RTCPeerConnectionState.RTCPeerConnectionStateDisconnected) {
         _logger.warning('WebRTC connection lost, attempting WebSocket failover');
@@ -141,12 +152,12 @@ class TransportManager {
   Future<void> _connectWebSocket(String token) async {
     _websocketClient = WebSocketClient();
     
-    // Set up message forwarding
-    _websocketClient!.messages.listen(_messageController.add);
-    _websocketClient!.audioData.listen(_audioController.add);
+    // Set up message forwarding with proper subscription management
+    _websocketMessageSub = _websocketClient!.messages.listen(_messageController.add);
+    _websocketAudioSub = _websocketClient!.audioData.listen(_audioController.add);
     
     // Monitor connection state for failover
-    _websocketClient!.connectionState.listen((state) {
+    _websocketStateSub = _websocketClient!.connectionState.listen((state) {
       if (state == WebSocketConnectionState.failed ||
           state == WebSocketConnectionState.error) {
         _logger.warning('WebSocket connection lost');
@@ -166,15 +177,22 @@ class TransportManager {
     _logger.info('Performing automatic failover to WebSocket');
     
     try {
-      // Get current token (would need to be stored or re-fetched)
-      // For now, assume we have the token available
-      final token = 'current_token'; // This would be retrieved from token service
+      // Use stored token for failover
+      if (_currentToken == null) {
+        throw StateError('No token available for failover - token has expired or not set');
+      }
       
-      await _connectWebSocket(token);
+      await _connectWebSocket(_currentToken!);
       
-      // Close WebRTC connection
+      // Close WebRTC connection and cleanup subscriptions
+      await _webrtcStateSub?.cancel();
+      await _webrtcMessageSub?.cancel();
+      await _webrtcAudioSub?.cancel();
       await _webrtcClient?.close();
       _webrtcClient = null;
+      _webrtcStateSub = null;
+      _webrtcMessageSub = null;
+      _webrtcAudioSub = null;
       
       _activeTransport = TransportType.webSocket;
       _updateStatus(TransportStatus(
@@ -260,11 +278,28 @@ class TransportManager {
   Future<void> close() async {
     _logger.info('Closing transport manager');
     
+    // Cancel all stream subscriptions
+    await _webrtcStateSub?.cancel();
+    await _webrtcMessageSub?.cancel();
+    await _webrtcAudioSub?.cancel();
+    await _websocketStateSub?.cancel();
+    await _websocketMessageSub?.cancel();
+    await _websocketAudioSub?.cancel();
+    
+    // Close clients
     await _webrtcClient?.close();
     await _websocketClient?.close();
     
+    // Clear references
     _webrtcClient = null;
     _websocketClient = null;
+    _webrtcStateSub = null;
+    _webrtcMessageSub = null;
+    _webrtcAudioSub = null;
+    _websocketStateSub = null;
+    _websocketMessageSub = null;
+    _websocketAudioSub = null;
+    _currentToken = null;
     _activeTransport = TransportType.none;
     
     await _messageController.close();
