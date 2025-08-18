@@ -89,11 +89,10 @@ class WebRTCClient {
       // 3. Exchange ICE candidates for NAT traversal
       // 4. Establish peer-to-peer connection
       // 
-      // For now, this skeleton provides WebRTC foundation (PAR-15 requirement)
-      _simulateConnectionForTesting();
-      
-      _logger.info('WebRTC connection initialized (skeleton mode)');
-      _logger.warning('Production use requires signaling server integration (PAR-16)');
+      // For PAR-15: WebRTC foundation is in place but not production-ready
+      // Marking as failed to force WebSocket fallback until PAR-16 is implemented
+      _logger.warning('WebRTC signaling not yet implemented - forcing fallback to WebSocket');
+      throw UnimplementedError('WebRTC signaling server integration required for production use (PAR-16)');
       
     } catch (e) {
       _logger.severe('Failed to initialize WebRTC connection: $e');
@@ -254,14 +253,5 @@ class WebRTCClient {
       _logger.severe('Error closing WebRTC connection: $e');
       rethrow;
     }
-  }
-  
-  /// Simulate connection for testing and PAR-15 compliance
-  /// Remove when signaling server is implemented
-  void _simulateConnectionForTesting() {
-    // Simulate successful connection for testing purposes
-    Timer(const Duration(milliseconds: 100), () {
-      _stateController.add(RTCPeerConnectionState.RTCPeerConnectionStateConnected);
-    });
   }
 }

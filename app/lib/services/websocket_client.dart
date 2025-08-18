@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:web_socket_channel/io.dart';
 import 'package:logging/logging.dart';
 
 /// WebSocket client for OpenAI Realtime API connections
@@ -63,22 +65,21 @@ class WebSocketClient {
       _logger.info('Connecting to WebSocket server');
       _updateState(WebSocketConnectionState.connecting);
       
-      // For OpenAI Realtime API, token authentication is handled via query parameter
-      // This approach works with the web_socket_channel package
-      Uri connectUri = _serverUri!;
+      // For OpenAI Realtime API, use secure header-based authentication
+      // This prevents token exposure in URLs/logs
+      Map<String, String> headers = {};
       if (_token != null) {
-        connectUri = _serverUri!.replace(
-          queryParameters: {
-            ...(_serverUri!.queryParameters),
-            'authorization': 'Bearer $_token',
-          },
-        );
+        headers['Authorization'] = 'Bearer $_token';
       }
       
-      _channel = WebSocketChannel.connect(
-        connectUri,
+      // Use IO WebSocket for header support
+      final webSocket = await WebSocket.connect(
+        _serverUri!.toString(),
         protocols: ['realtime'],
+        headers: headers,
       );
+      
+      _channel = IOWebSocketChannel(webSocket);
       
       _logger.fine('WebSocket connection initiated');
       

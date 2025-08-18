@@ -26,6 +26,10 @@ class TransportManager {
   StreamSubscription? _websocketAudioSub;
   StreamSubscription? _websocketStateSub;
   
+  // Synchronization for preventing race conditions
+  bool _isFailoverInProgress = false;
+  bool _isConnecting = false;
+  
   final StreamController<Map<String, dynamic>> _messageController = 
       StreamController<Map<String, dynamic>>.broadcast();
   final StreamController<Uint8List> _audioController = 
@@ -59,13 +63,19 @@ class TransportManager {
     required String token,
     bool preferWebSocket = false,
   }) async {
-    _logger.info('Connecting with transport manager');
+    if (_isConnecting) {
+      throw StateError('Connection already in progress');
+    }
     
-    // Store token with 5-minute expiration for failover use (per CLAUDE.md)
-    _currentToken = token;
-    _tokenExpiry = DateTime.now().add(const Duration(minutes: 5));
-    
-    _preferredTransport = preferWebSocket ? TransportType.webSocket : TransportType.webrtc;
+    _isConnecting = true;
+    try {
+      _logger.info('Connecting with transport manager');
+      
+      // Store token with 5-minute expiration for failover use (per CLAUDE.md)
+      _currentToken = token;
+      _tokenExpiry = DateTime.now().add(const Duration(minutes: 5));
+      
+      _preferredTransport = preferWebSocket ? TransportType.webSocket : TransportType.webrtc;
     
     // Try preferred transport first
     bool connected = await _tryConnect(_preferredTransport, token);
@@ -80,13 +90,16 @@ class TransportManager {
       connected = await _tryConnect(fallbackTransport, token);
     }
     
-    if (!connected) {
-      _updateStatus(TransportStatus(
-        activeTransport: TransportType.none,
-        state: TransportState.failed,
-        error: 'All transport methods failed',
-      ));
-      throw Exception('Failed to establish connection with any transport');
+      if (!connected) {
+        _updateStatus(TransportStatus(
+          activeTransport: TransportType.none,
+          state: TransportState.failed,
+          error: 'All transport methods failed',
+        ));
+        throw Exception('Failed to establish connection with any transport');
+      }
+    } finally {
+      _isConnecting = false;
     }
   }
   
@@ -162,11 +175,12 @@ class TransportManager {
     // Monitor connection state for failover
     _websocketStateSub = _websocketClient!.connectionState.listen((state) {
       if (state == WebSocketConnectionState.failed) {
-        _logger.severe('WebSocket connection failed permanently');
+        _logger.severe('WebSocket connection failed permanently - all transport options exhausted');
+        _activeTransport = TransportType.none;
         _updateStatus(TransportStatus(
-          activeTransport: TransportType.webSocket,
+          activeTransport: TransportType.none,
           state: TransportState.failed,
-          error: 'WebSocket connection failed',
+          error: 'All transport methods have failed - WebSocket connection lost permanently',
         ));
       } else if (state == WebSocketConnectionState.error) {
         _logger.warning('WebSocket connection error - may recover');
@@ -187,6 +201,12 @@ class TransportManager {
       return; // Already using WebSocket
     }
     
+    if (_isFailoverInProgress) {
+      _logger.info('Failover already in progress, skipping duplicate attempt');
+      return;
+    }
+    
+    _isFailoverInProgress = true;
     _logger.info('Performing automatic failover to WebSocket');
     
     try {
@@ -227,6 +247,8 @@ class TransportManager {
         state: TransportState.failed,
         error: 'Failover failed: $e',
       ));
+    } finally {
+      _isFailoverInProgress = false;
     }
   }
   
@@ -248,10 +270,18 @@ class TransportManager {
   Future<void> sendMessage(Map<String, dynamic> message) async {
     switch (_activeTransport) {
       case TransportType.webrtc:
-        await _webrtcClient?.sendMessage(message);
+        final client = _webrtcClient;
+        if (client == null) {
+          throw StateError('WebRTC client not available');
+        }
+        await client.sendMessage(message);
         break;
       case TransportType.webSocket:
-        await _websocketClient?.sendMessage(message);
+        final client = _websocketClient;
+        if (client == null) {
+          throw StateError('WebSocket client not available');
+        }
+        await client.sendMessage(message);
         break;
       case TransportType.none:
         throw StateError('No active transport connection');
@@ -262,10 +292,18 @@ class TransportManager {
   Future<void> sendAudio(Uint8List audioData) async {
     switch (_activeTransport) {
       case TransportType.webrtc:
-        await _webrtcClient?.sendAudio(audioData);
+        final client = _webrtcClient;
+        if (client == null) {
+          throw StateError('WebRTC client not available');
+        }
+        await client.sendAudio(audioData);
         break;
       case TransportType.webSocket:
-        await _websocketClient?.sendAudio(audioData);
+        final client = _websocketClient;
+        if (client == null) {
+          throw StateError('WebSocket client not available');
+        }
+        await client.sendAudio(audioData);
         break;
       case TransportType.none:
         throw StateError('No active transport connection');
@@ -275,7 +313,11 @@ class TransportManager {
   /// Start audio capture (WebRTC only)
   Future<void> startAudioCapture() async {
     if (_activeTransport == TransportType.webrtc) {
-      await _webrtcClient?.startAudioCapture();
+      final client = _webrtcClient;
+      if (client == null) {
+        throw StateError('WebRTC client not available for audio capture');
+      }
+      await client.startAudioCapture();
     } else {
       _logger.warning('Audio capture not available with current transport: $_activeTransport');
     }
@@ -283,7 +325,10 @@ class TransportManager {
   
   /// Stop audio capture (WebRTC only)
   Future<void> stopAudioCapture() async {
-    await _webrtcClient?.stopAudioCapture();
+    final client = _webrtcClient;
+    if (client != null) {
+      await client.stopAudioCapture();
+    }
   }
   
   /// Update transport status and notify listeners
