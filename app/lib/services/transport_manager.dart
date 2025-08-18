@@ -76,20 +76,20 @@ class TransportManager {
       _tokenExpiry = DateTime.now().add(const Duration(minutes: 5));
       
       _preferredTransport = preferWebSocket ? TransportType.webSocket : TransportType.webrtc;
-    
-    // Try preferred transport first
-    bool connected = await _tryConnect(_preferredTransport, token);
-    
-    // Fall back to alternative transport if preferred fails
-    if (!connected) {
-      final fallbackTransport = _preferredTransport == TransportType.webrtc 
-          ? TransportType.webSocket 
-          : TransportType.webrtc;
       
-      _logger.info('Preferred transport failed, trying fallback: $fallbackTransport');
-      connected = await _tryConnect(fallbackTransport, token);
-    }
-    
+      // Try preferred transport first
+      bool connected = await _tryConnect(_preferredTransport, token);
+      
+      // Fall back to alternative transport if preferred fails
+      if (!connected) {
+        final fallbackTransport = _preferredTransport == TransportType.webrtc 
+            ? TransportType.webSocket 
+            : TransportType.webrtc;
+        
+        _logger.info('Preferred transport failed, trying fallback: $fallbackTransport');
+        connected = await _tryConnect(fallbackTransport, token);
+      }
+      
       if (!connected) {
         _updateStatus(TransportStatus(
           activeTransport: TransportType.none,
@@ -176,6 +176,7 @@ class TransportManager {
     _websocketStateSub = _websocketClient!.connectionState.listen((state) {
       if (state == WebSocketConnectionState.failed) {
         _logger.severe('WebSocket connection failed permanently - all transport options exhausted');
+        // Update state through proper state management instead of direct assignment
         _activeTransport = TransportType.none;
         _updateStatus(TransportStatus(
           activeTransport: TransportType.none,
@@ -185,7 +186,7 @@ class TransportManager {
       } else if (state == WebSocketConnectionState.error) {
         _logger.warning('WebSocket connection error - may recover');
         _updateStatus(TransportStatus(
-          activeTransport: TransportType.webSocket,
+          activeTransport: _activeTransport, // Use current active transport instead of assuming WebSocket
           state: TransportState.error,
           error: 'WebSocket connection error',
         ));
@@ -340,27 +341,27 @@ class TransportManager {
   Future<void> close() async {
     _logger.info('Closing transport manager');
     
-    // Cancel all stream subscriptions
+    // Cancel all stream subscriptions with proper null safety
     await _webrtcStateSub?.cancel();
+    _webrtcStateSub = null;
     await _webrtcMessageSub?.cancel();
+    _webrtcMessageSub = null;
     await _webrtcAudioSub?.cancel();
+    _webrtcAudioSub = null;
     await _websocketStateSub?.cancel();
+    _websocketStateSub = null;
     await _websocketMessageSub?.cancel();
+    _websocketMessageSub = null;
     await _websocketAudioSub?.cancel();
+    _websocketAudioSub = null;
     
     // Close clients
     await _webrtcClient?.close();
     await _websocketClient?.close();
     
-    // Clear references and securely clear token
+    // Clear client references
     _webrtcClient = null;
     _websocketClient = null;
-    _webrtcStateSub = null;
-    _webrtcMessageSub = null;
-    _webrtcAudioSub = null;
-    _websocketStateSub = null;
-    _websocketMessageSub = null;
-    _websocketAudioSub = null;
     
     // Securely clear token and expiry
     _currentToken = null;

@@ -7,9 +7,19 @@ import 'package:logging/logging.dart';
 /// WebRTC client for OpenAI Realtime API connections
 /// Provides low-latency audio transport as primary connection method
 /// 
-/// IMPORTANT: This implementation requires a signaling server for production use.
-/// For PAR-15, this provides the foundation with data channel communication.
-/// Future implementation (PAR-16+) will integrate with OpenAI's signaling service.
+/// **IMPORTANT - CURRENT LIMITATION (PAR-15):**
+/// This implementation is NOT functional for actual connections and will 
+/// intentionally fail to force WebSocket fallback. This is expected behavior
+/// until PAR-16 implements the required signaling server integration.
+/// 
+/// **Production Requirements (PAR-16+):**
+/// - OpenAI Realtime API signaling server integration  
+/// - SDP offer/answer exchange mechanism
+/// - ICE candidate exchange for NAT traversal
+/// - Full peer-to-peer connection establishment
+///
+/// **Current Status:** Foundation only - establishes peer connection and 
+/// data channel infrastructure but throws UnimplementedError on connect().
 class WebRTCClient {
   static final _logger = Logger('WebRTCClient');
   
