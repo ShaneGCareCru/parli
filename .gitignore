@@ -1,0 +1,213 @@
+# ============================================================================
+# Parli Mono-Repo .gitignore
+# Combined patterns for Flutter app, Python backend, and development tools
+# ============================================================================
+
+# ===================
+# Environment & Secrets
+# ===================
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+secrets/
+.secrets
+
+# ===================  
+# Flutter & Dart
+# ===================
+
+# Build outputs
+/app/build/
+/app/.dart_tool/
+/app/.packages
+/app/.pub-cache/
+/app/.pub/
+/app/build/
+
+# Generated files
+/app/.flutter-plugins
+/app/.flutter-plugins-dependencies
+/app/.metadata
+/app/pubspec.lock
+
+# Platform-specific
+/app/android/app/debug
+/app/android/app/profile
+/app/android/app/release
+/app/android/.gradle/
+/app/android/gradle/wrapper/
+/app/android/gradlew*
+/app/android/local.properties
+/app/android/key.properties
+/app/android/app/src/main/jks/
+/app/ios/Flutter/flutter_export_environment.sh
+/app/ios/Runner.xcworkspace/xcuserdata/
+/app/ios/Runner.xcodeproj/xcuserdata/
+/app/ios/Runner.xcodeproj/project.xcworkspace/xcuserdata/
+/app/ios/Pods/
+/app/ios/.symlinks/
+/app/ios/Flutter/App.framework
+/app/ios/Flutter/Flutter.framework
+/app/ios/Flutter/Flutter.podspec
+/app/ios/Flutter/Generated.xcconfig
+/app/ios/Flutter/ephemeral
+
+# IDE
+/app/.vscode/
+/app/.idea/
+/app/*.iml
+/app/*.ipr
+/app/*.iws
+
+# ===================
+# Python & FastAPI  
+# ===================
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+/token-service/venv/
+/token-service/.venv/
+/token-service/env/
+/token-service/.env/
+/token-service/.conda/
+/token-service/conda-meta/
+
+# Distribution / packaging
+.Python
+/token-service/build/
+/token-service/develop-eggs/
+/token-service/dist/
+/token-service/downloads/
+/token-service/eggs/
+/token-service/.eggs/
+/token-service/lib/
+/token-service/lib64/
+/token-service/parts/
+/token-service/sdist/
+/token-service/var/
+/token-service/wheels/
+/token-service/*.egg-info/
+/token-service/.installed.cfg
+/token-service/*.egg
+/token-service/MANIFEST
+
+# Testing
+/token-service/.pytest_cache/
+/token-service/.coverage
+/token-service/htmlcov/
+/token-service/.tox/
+/token-service/.nox/
+/token-service/coverage.xml
+/token-service/*.cover
+/token-service/.hypothesis/
+
+# Linting and formatting
+/token-service/.mypy_cache/
+/token-service/.pyre/
+/token-service/.pytype/
+
+# ===================
+# Docker & Containers
+# ===================
+*.log
+docker-compose.override.yml
+
+# ===================
+# IDE & Editors
+# ===================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# JetBrains
+*.iml
+*.ipr
+*.iws
+out/
+.idea_modules/
+
+# Vim
+*.un~
+Session.vim
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# ===================
+# OS Generated Files
+# ===================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*.lnk
+
+# ===================
+# Logs & Temporary Files  
+# ===================
+*.log
+*.tmp
+*.temp
+.tmp/
+.temp/
+
+# ===================
+# Documentation Build
+# ===================
+docs/_build/
+site/
+
+# ===================
+# Node.js (if needed)
+# ===================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ===================
+# Backup & Archive Files
+# ===================
+*.bak
+*.backup
+*.orig
+*.rej
+*.zip
+*.tar.gz
+*.rar
+
+# ===================
+# Claude Code Specific
+# ===================
+.claude/
+
+# ===================
+# Development Tools
+# ===================
+.terraform/
+*.tfstate
+*.tfstate.*
+.vagrant/
+
+# Coverage reports
+coverage/
+.nyc_output
+
+# Profiling data
+*.prof

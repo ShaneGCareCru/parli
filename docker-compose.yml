@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  token-service:
+    build: 
+      context: ./token-service
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount source for hot reload during development
+      - ./token-service/src:/app/src:ro
+    environment:
+      - ENV=development
+      - HOST=0.0.0.0
+      - PORT=8000
+      - LOG_LEVEL=INFO
+    env_file:
+      - ./token-service/.env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+  # Note: Flutter app runs on host during development
+  # Use `flutter run` in the app/ directory for hot reload and debugging
+
+networks:
+  default:
+    name: parli-network
