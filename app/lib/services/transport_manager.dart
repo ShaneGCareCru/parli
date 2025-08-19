@@ -5,17 +5,21 @@ import 'package:logging/logging.dart';
 import 'webrtc_client.dart';
 import 'websocket_client.dart';
 import 'token_service.dart';
+import 'realtime_session_manager.dart';
 
 /// Manages transport selection between WebRTC (primary) and WebSocket (fallback)
 /// Handles automatic failover and manual transport switching
+/// Now supports dual Realtime sessions for bidirectional translation
 class TransportManager {
   static final _logger = Logger('TransportManager');
   
   WebRTCClient? _webrtcClient;
   WebSocketClient? _websocketClient;
+  RealtimeSessionManager? _sessionManager;
   
   TransportType _activeTransport = TransportType.none;
   TransportType _preferredTransport = TransportType.webrtc;
+  bool _useDualSessions = false;
   
   // Token service for ephemeral token management
   final TokenService _tokenService;
@@ -25,6 +29,8 @@ class TransportManager {
   StreamSubscription? _websocketMessageSub;
   StreamSubscription? _websocketAudioSub;
   StreamSubscription? _websocketStateSub;
+  StreamSubscription? _sessionMessageSub;
+  StreamSubscription? _sessionStatusSub;
   
   // Synchronization for preventing race conditions
   bool _isFailoverInProgress = false;
@@ -63,8 +69,14 @@ class TransportManager {
   /// 
   /// Automatically fetches ephemeral token from backend service
   /// [preferWebSocket] - Force WebSocket usage (for travel mode)
+  /// [languageA] - Source language for dual session mode (e.g., 'en')
+  /// [languageB] - Target language for dual session mode (e.g., 'zh-CN')
+  /// [useDualSessions] - Enable dual Realtime sessions for bidirectional translation
   Future<void> connect({
     bool preferWebSocket = false,
+    String? languageA,
+    String? languageB,
+    bool useDualSessions = false,
   }) async {
     if (_isConnecting) {
       throw StateError('Connection already in progress');
@@ -72,25 +84,40 @@ class TransportManager {
     
     _isConnecting = true;
     try {
-      _logger.info('Connecting with transport manager');
+      _logger.info('Connecting with transport manager (dualSessions: $useDualSessions)');
+      
+      // Validate dual session parameters
+      if (useDualSessions && (languageA == null || languageB == null)) {
+        throw ArgumentError('Language parameters required for dual session mode');
+      }
+      
+      _useDualSessions = useDualSessions;
       
       // Fetch fresh token from token service
       final token = await _tokenService.getToken();
       _logger.info('Successfully obtained token from service');
       
-      _preferredTransport = preferWebSocket ? TransportType.webSocket : TransportType.webrtc;
+      bool connected = false;
       
-      // Try preferred transport first
-      bool connected = await _tryConnect(_preferredTransport, token);
-      
-      // Fall back to alternative transport if preferred fails
-      if (!connected) {
-        final fallbackTransport = _preferredTransport == TransportType.webrtc 
-            ? TransportType.webSocket 
-            : TransportType.webrtc;
+      if (_useDualSessions) {
+        // Use dual Realtime session manager for bidirectional translation
+        connected = await _connectDualSessions(languageA!, languageB!);
+      } else {
+        // Use traditional single transport approach
+        _preferredTransport = preferWebSocket ? TransportType.webSocket : TransportType.webrtc;
         
-        _logger.info('Preferred transport failed, trying fallback: $fallbackTransport');
-        connected = await _tryConnect(fallbackTransport, token);
+        // Try preferred transport first
+        connected = await _tryConnect(_preferredTransport, token);
+        
+        // Fall back to alternative transport if preferred fails
+        if (!connected) {
+          final fallbackTransport = _preferredTransport == TransportType.webrtc 
+              ? TransportType.webSocket 
+              : TransportType.webrtc;
+          
+          _logger.info('Preferred transport failed, trying fallback: $fallbackTransport');
+          connected = await _tryConnect(fallbackTransport, token);
+        }
       }
       
       if (!connected) {
@@ -100,6 +127,87 @@ class TransportManager {
     } finally {
       _isConnecting = false;
     }
+  }
+  
+  /// Connect using dual Realtime session manager
+  Future<bool> _connectDualSessions(String languageA, String languageB) async {
+    try {
+      _logger.info('Connecting dual Realtime sessions ($languageA↔$languageB)');
+      
+      _updateStatus(TransportStatus(
+        activeTransport: TransportType.webrtc,
+        state: TransportState.connecting,
+      ));
+      
+      // Initialize session manager
+      _sessionManager = RealtimeSessionManager(
+        languageA: languageA,
+        languageB: languageB,
+        tokenService: _tokenService,
+      );
+      
+      // Set up session message forwarding
+      _sessionMessageSub = _sessionManager!.messages.listen((translationMessage) {
+        // Convert translation message to standard format for compatibility
+        _messageController.add(translationMessage.data);
+      });
+      
+      // Monitor session status
+      _sessionStatusSub = _sessionManager!.status.listen((sessionStatus) {
+        _handleDualSessionStatus(sessionStatus);
+      });
+      
+      // Initialize both sessions
+      await _sessionManager!.initialize();
+      
+      _activeTransport = TransportType.webrtc;
+      _updateStatus(TransportStatus(
+        activeTransport: TransportType.webrtc,
+        state: TransportState.connected,
+      ));
+      
+      _logger.info('Dual Realtime sessions connected successfully');
+      return true;
+      
+    } catch (e) {
+      _logger.severe('Failed to connect dual sessions: $e');
+      _updateStatus(TransportStatus(
+        activeTransport: TransportType.webrtc,
+        state: TransportState.error,
+        error: e.toString(),
+      ));
+      return false;
+    }
+  }
+  
+  /// Handle dual session status updates
+  void _handleDualSessionStatus(SessionStatus sessionStatus) {
+    // Map session status to transport status
+    TransportState state;
+    String? message;
+    
+    if (sessionStatus.sessionAB == SessionState.connected && 
+        sessionStatus.sessionBA == SessionState.connected) {
+      state = TransportState.connected;
+      message = 'Both sessions connected';
+    } else if (sessionStatus.sessionAB == SessionState.connecting || 
+               sessionStatus.sessionBA == SessionState.connecting) {
+      state = TransportState.connecting;
+      message = 'Establishing sessions...';
+    } else if (sessionStatus.sessionAB == SessionState.error || 
+               sessionStatus.sessionBA == SessionState.error) {
+      state = TransportState.error;
+      message = sessionStatus.message ?? 'Session error';
+    } else {
+      state = TransportState.disconnected;
+      message = 'Sessions disconnected';
+    }
+    
+    _updateStatus(TransportStatus(
+      activeTransport: _activeTransport,
+      state: state,
+      error: state == TransportState.error ? message : null,
+    ));
   }
   
   /// Attempt connection with specific transport type
@@ -253,6 +361,11 @@ class TransportManager {
   
   /// Send message through active transport
   Future<void> sendMessage(Map<String, dynamic> message) async {
+    if (_useDualSessions) {
+      // For dual sessions, you need to specify the direction
+      throw StateError('Use sendMessageToSession() for dual session mode');
+    }
+    
     switch (_activeTransport) {
       case TransportType.webrtc:
         final client = _webrtcClient;
@@ -273,8 +386,34 @@ class TransportManager {
     }
   }
   
+  /// Send message to specific session (dual session mode only)
+  Future<void> sendMessageToSession(
+    Map<String, dynamic> message, 
+    SessionDirection direction,
+  ) async {
+    if (!_useDualSessions) {
+      throw StateError('Dual session mode not enabled');
+    }
+    
+    final sessionManager = _sessionManager;
+    if (sessionManager == null) {
+      throw StateError('Session manager not available');
+    }
+    
+    await sessionManager.sendMessage(message, direction);
+  }
+  
   /// Send audio through active transport
   Future<void> sendAudio(Uint8List audioData) async {
+    if (_useDualSessions) {
+      final sessionManager = _sessionManager;
+      if (sessionManager == null) {
+        throw StateError('Session manager not available');
+      }
+      await sessionManager.sendAudio(audioData);
+      return;
+    }
+    
     switch (_activeTransport) {
       case TransportType.webrtc:
         final client = _webrtcClient;
@@ -294,6 +433,46 @@ class TransportManager {
         throw StateError('No active transport connection');
     }
   }
+  
+  /// Start translation in specified direction (dual session mode only)
+  Future<void> startTranslation(SessionDirection direction) async {
+    if (!_useDualSessions) {
+      throw StateError('Translation direction control only available in dual session mode');
+    }
+    
+    final sessionManager = _sessionManager;
+    if (sessionManager == null) {
+      throw StateError('Session manager not available');
+    }
+    
+    await sessionManager.startTranslation(direction);
+  }
+  
+  /// Stop active translation (dual session mode only)
+  Future<void> stopTranslation() async {
+    if (!_useDualSessions) {
+      throw StateError('Translation control only available in dual session mode');
+    }
+    
+    final sessionManager = _sessionManager;
+    if (sessionManager == null) {
+      throw StateError('Session manager not available');
+    }
+    
+    await sessionManager.stopTranslation();
+  }
+  
+  /// Get current active translation direction (dual session mode only)
+  SessionDirection? get activeTranslationDirection {
+    if (!_useDualSessions) return null;
+    return _sessionManager?.activeDirection;
+  }
+  
+  /// Whether dual session mode is enabled
+  bool get useDualSessions => _useDualSessions;
+  
+  /// Whether dual sessions are ready for translation
+  bool get isDualSessionsReady => _sessionManager?.isReady ?? false;
   
   /// Start audio capture (WebRTC only)
   Future<void> startAudioCapture() async {
@@ -358,20 +537,26 @@ class TransportManager {
       await _websocketStateSub?.cancel();
       await _websocketMessageSub?.cancel();
       await _websocketAudioSub?.cancel();
+      await _sessionMessageSub?.cancel();
+      await _sessionStatusSub?.cancel();
       
-      // Close clients
+      // Close clients and session manager
       await _webrtcClient?.close();
       await _websocketClient?.close();
+      await _sessionManager?.close();
       
       // Clear references
       _webrtcClient = null;
       _websocketClient = null;
+      _sessionManager = null;
       _webrtcStateSub = null;
       _webrtcMessageSub = null;
       _webrtcAudioSub = null;
       _websocketStateSub = null;
       _websocketMessageSub = null;
       _websocketAudioSub = null;
+      _sessionMessageSub = null;
+      _sessionStatusSub = null;
       
       _logger.info('All transport resources cleaned up');
     } catch (e) {
@@ -396,18 +581,25 @@ class TransportManager {
     _websocketMessageSub = null;
     await _websocketAudioSub?.cancel();
     _websocketAudioSub = null;
+    await _sessionMessageSub?.cancel();
+    _sessionMessageSub = null;
+    await _sessionStatusSub?.cancel();
+    _sessionStatusSub = null;
     
-    // Close clients
+    // Close clients and session manager
     await _webrtcClient?.close();
     await _websocketClient?.close();
+    await _sessionManager?.close();
     
     // Clear client references
     _webrtcClient = null;
     _websocketClient = null;
+    _sessionManager = null;
     
     // Dispose of token service
     _tokenService.dispose();
     _activeTransport = TransportType.none;
+    _useDualSessions = false;
     
     await _messageController.close();
     await _audioController.close();
