@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
 enum PTTButtonState { idle, pressed, disabled }
@@ -11,6 +12,7 @@ class PTTButton extends StatefulWidget {
   final Color primaryColor;
   final Color disabledColor;
   final IconData? icon;
+  final Duration holdThreshold;
 
   const PTTButton({
     super.key,
@@ -20,6 +22,7 @@ class PTTButton extends StatefulWidget {
     this.primaryColor = Colors.blue,
     this.disabledColor = Colors.grey,
     this.icon,
+    this.holdThreshold = const Duration(milliseconds: 500),
   });
 
   @override
@@ -31,6 +34,7 @@ class _PTTButtonState extends State<PTTButton>
   PTTButtonState _buttonState = PTTButtonState.idle;
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
+  Timer? _holdTimer;
 
   @override
   void initState() {
@@ -50,6 +54,7 @@ class _PTTButtonState extends State<PTTButton>
 
   @override
   void dispose() {
+    _holdTimer?.cancel();
     _animationController.dispose();
     super.dispose();
   }
@@ -62,6 +67,13 @@ class _PTTButtonState extends State<PTTButton>
     });
     _animationController.forward();
     widget.onEvent(PTTEvent.press);
+    
+    // Start hold timer
+    _holdTimer = Timer(widget.holdThreshold, () {
+      if (_buttonState == PTTButtonState.pressed) {
+        widget.onEvent(PTTEvent.hold);
+      }
+    });
   }
 
   void _handleTapUp(TapUpDetails details) {
@@ -77,6 +89,7 @@ class _PTTButtonState extends State<PTTButton>
   }
 
   void _handleRelease() {
+    _holdTimer?.cancel();
     setState(() {
       _buttonState = PTTButtonState.idle;
     });

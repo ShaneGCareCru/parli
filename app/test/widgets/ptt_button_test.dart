@@ -126,13 +126,63 @@ void main() {
       expect(disabledDecoration.color, Colors.grey);
     });
 
-    testWidgets('should scale animation on press', (WidgetTester tester) async {
+    testWidgets('should have visual press feedback', (WidgetTester tester) async {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
             body: PTTButton(
               label: 'Test',
               onEvent: onEvent,
+              primaryColor: Colors.blue,
+            ),
+          ),
+        ),
+      );
+
+      final buttonFinder = find.byType(GestureDetector);
+      
+      // Check initial button color
+      var containerWidget = tester.widget<Container>(
+        find.descendant(
+          of: find.byType(PTTButton),
+          matching: find.byType(Container),
+        ),
+      );
+      var decoration = containerWidget.decoration as BoxDecoration;
+      expect(decoration.color, Colors.blue);
+      
+      // Start gesture and check color change
+      final gesture = await tester.startGesture(tester.getCenter(buttonFinder));
+      await tester.pump();
+      
+      // Verify press event was triggered
+      expect(capturedEvents, contains(PTTEvent.press));
+      
+      // Check pressed button color (should be dimmed)
+      containerWidget = tester.widget<Container>(
+        find.descendant(
+          of: find.byType(PTTButton),
+          matching: find.byType(Container),
+        ),
+      );
+      decoration = containerWidget.decoration as BoxDecoration;
+      expect(decoration.color, Colors.blue.withValues(alpha: 0.8));
+      
+      await gesture.up();
+      await tester.pump();
+      
+      // Verify release event was triggered
+      expect(capturedEvents, contains(PTTEvent.release));
+    });
+    
+    testWidgets('should trigger hold event after threshold duration', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: PTTButton(
+              label: 'Test',
+              onEvent: onEvent,
+              holdThreshold: const Duration(milliseconds: 300),
             ),
           ),
         ),
@@ -142,18 +192,18 @@ void main() {
       
       final gesture = await tester.startGesture(tester.getCenter(buttonFinder));
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 110));
       
-      final transformWidget = tester.widget<Transform>(
-        find.descendant(
-          of: find.byType(PTTButton),
-          matching: find.byType(Transform),
-        ),
-      );
+      expect(capturedEvents, contains(PTTEvent.press));
+      expect(capturedEvents, isNot(contains(PTTEvent.hold)));
       
-      expect(transformWidget.transform.getMaxScaleOnAxis(), lessThan(1.0));
+      await tester.pump(const Duration(milliseconds: 350));
+      
+      expect(capturedEvents, contains(PTTEvent.hold));
       
       await gesture.up();
+      await tester.pumpAndSettle();
+      
+      expect(capturedEvents, contains(PTTEvent.release));
     });
   });
 }

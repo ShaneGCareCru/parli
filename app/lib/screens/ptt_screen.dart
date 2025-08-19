@@ -2,7 +2,14 @@ import 'package:flutter/material.dart';
 import '../widgets/ptt_button.dart';
 
 class PTTScreen extends StatefulWidget {
-  const PTTScreen({super.key});
+  final String languageA;
+  final String languageB;
+  
+  const PTTScreen({
+    super.key,
+    this.languageA = "English",
+    this.languageB = "中文",
+  });
 
   @override
   State<PTTScreen> createState() => _PTTScreenState();
@@ -11,13 +18,11 @@ class PTTScreen extends StatefulWidget {
 class _PTTScreenState extends State<PTTScreen> {
   bool _isButtonAEnabled = true;
   bool _isButtonBEnabled = true;
-  final String _currentLanguageA = "English";
-  final String _currentLanguageB = "中文";
   String _lastEvent = "No events yet";
 
   void _handleButtonAEvent(PTTEvent event) {
     setState(() {
-      _lastEvent = "Button A ($_currentLanguageA → $_currentLanguageB): ${event.toString().split('.').last}";
+      _lastEvent = "Button A (${widget.languageA} → ${widget.languageB}): ${event.toString().split('.').last}";
       if (event == PTTEvent.press) {
         _isButtonBEnabled = false;
       } else if (event == PTTEvent.release) {
@@ -30,7 +35,7 @@ class _PTTScreenState extends State<PTTScreen> {
 
   void _handleButtonBEvent(PTTEvent event) {
     setState(() {
-      _lastEvent = "Button B ($_currentLanguageB → $_currentLanguageA): ${event.toString().split('.').last}";
+      _lastEvent = "Button B (${widget.languageB} → ${widget.languageA}): ${event.toString().split('.').last}";
       if (event == PTTEvent.press) {
         _isButtonAEnabled = false;
       } else if (event == PTTEvent.release) {
@@ -52,7 +57,7 @@ class _PTTScreenState extends State<PTTScreen> {
         title: const Text('Parli - Voice Translator'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
         child: Column(
           children: [
@@ -69,12 +74,12 @@ class _PTTScreenState extends State<PTTScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(_currentLanguageA, style: const TextStyle(fontSize: 16)),
+                        Text(widget.languageA, style: const TextStyle(fontSize: 16)),
                         const Padding(
                           padding: EdgeInsets.symmetric(horizontal: 16),
                           child: Icon(Icons.swap_horiz, size: 24),
                         ),
-                        Text(_currentLanguageB, style: const TextStyle(fontSize: 16)),
+                        Text(widget.languageB, style: const TextStyle(fontSize: 16)),
                       ],
                     ),
                   ],
@@ -82,22 +87,21 @@ class _PTTScreenState extends State<PTTScreen> {
               ),
             ),
             const SizedBox(height: 32),
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    'Hold to Speak',
-                    style: Theme.of(context).textTheme.headlineMedium,
-                  ),
-                  const SizedBox(height: 48),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  'Hold to Speak',
+                  style: Theme.of(context).textTheme.headlineMedium,
+                ),
+                const SizedBox(height: 48),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
                       Column(
                         children: [
                           PTTButton(
-                            label: _currentLanguageA,
+                            label: widget.languageA,
                             onEvent: _handleButtonAEvent,
                             isEnabled: _isButtonAEnabled,
                             primaryColor: Colors.blue,
@@ -105,7 +109,7 @@ class _PTTScreenState extends State<PTTScreen> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'To $_currentLanguageB',
+                            'To ${widget.languageB}',
                             style: const TextStyle(
                               fontSize: 12,
                               color: Colors.grey,
@@ -116,7 +120,7 @@ class _PTTScreenState extends State<PTTScreen> {
                       Column(
                         children: [
                           PTTButton(
-                            label: _currentLanguageB,
+                            label: widget.languageB,
                             onEvent: _handleButtonBEvent,
                             isEnabled: _isButtonBEnabled,
                             primaryColor: Colors.green,
@@ -124,7 +128,7 @@ class _PTTScreenState extends State<PTTScreen> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'To $_currentLanguageA',
+                            'To ${widget.languageA}',
                             style: const TextStyle(
                               fontSize: 12,
                               color: Colors.grey,
@@ -136,7 +140,6 @@ class _PTTScreenState extends State<PTTScreen> {
                   ),
                 ],
               ),
-            ),
             const SizedBox(height: 32),
             Card(
               child: Padding(
