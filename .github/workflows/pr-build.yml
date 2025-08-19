@@ -10,7 +10,7 @@ on:
       - 'docker-compose.yml'
 
 env:
-  FLUTTER_VERSION: '3.16.0'
+  FLUTTER_VERSION: '3.24.3'
   PYTHON_VERSION: '3.11'
 
 jobs:
@@ -112,8 +112,8 @@ jobs:
         working-directory: .
 
       - name: Run pytest (tests)
-        run: pytest token-service/tests --cov=token-service/src --cov-report=xml
-        working-directory: .
+        run: PYTHONPATH=. pytest tests --cov=src --cov-report=xml
+        working-directory: ./token-service
         env:
           OPENAI_API_KEY: mock_key_for_testing
 
