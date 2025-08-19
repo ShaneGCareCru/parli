@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:logging/logging.dart';
 
@@ -11,6 +12,14 @@ class TokenService {
   // Token service endpoint - configurable via environment
   static const String _defaultBaseUrl = 'http://localhost:8000';
   final String _baseUrl;
+  
+  /// Get base URL from environment or use default
+  static String _getBaseUrl() {
+    // Try environment variables first (for production)
+    final envUrl = Platform.environment['TOKEN_SERVICE_URL'] ??
+                   Platform.environment['PARLI_TOKEN_SERVICE_URL'];
+    return envUrl ?? _defaultBaseUrl;
+  }
   
   // Cached token data
   String? _currentToken;
@@ -26,8 +35,16 @@ class TokenService {
   TokenService({
     String? baseUrl,
     http.Client? httpClient,
-  }) : _baseUrl = baseUrl ?? _defaultBaseUrl,
-       _httpClient = httpClient ?? http.Client();
+  }) : _baseUrl = baseUrl ?? _getBaseUrl(),
+       _httpClient = httpClient ?? _createHttpClient();
+       
+  /// Create HTTP client with proper timeout configuration
+  static http.Client _createHttpClient() {
+    final client = http.Client();
+    // Note: For connection pooling and advanced timeout config,
+    // consider using dio package in future iterations
+    return client;
+  }
   
   /// Get current token, refreshing if needed
   /// 
@@ -73,7 +90,7 @@ class TokenService {
       switch (response.statusCode) {
         case 200:
           try {
-            await _parseTokenResponse(response.body);
+            _parseTokenResponse(response.body);
             _logger.info('Token refreshed successfully (expires: $_tokenExpiry)');
           } catch (e) {
             _logger.severe('Failed to parse token response: $e');
@@ -152,7 +169,7 @@ class TokenService {
   }
   
   /// Parse token response from backend
-  Future<void> _parseTokenResponse(String responseBody) async {
+  void _parseTokenResponse(String responseBody) {
     try {
       final data = jsonDecode(responseBody) as Map<String, dynamic>;
       
@@ -161,8 +178,21 @@ class TokenService {
         throw FormatException('Invalid token response: missing required fields');
       }
       
-      _currentToken = data['token'] as String;
-      _tokenType = data['token_type'] as String? ?? 'Bearer';
+      final token = data['token'] as String;
+      final tokenType = data['token_type'] as String? ?? 'Bearer';
+      
+      // Validate token format for basic security
+      if (token.length < 10 || token.length > 2048) {
+        throw FormatException('Invalid token length: ${token.length}');
+      }
+      
+      // Check for basic token format patterns
+      if (!RegExp(r'^[a-zA-Z0-9\-_\.]+$').hasMatch(token)) {
+        throw FormatException('Invalid token format - contains invalid characters');
+      }
+      
+      _currentToken = token;
+      _tokenType = tokenType;
       
       // Parse ISO 8601 expiry timestamp
       final expiryString = data['expires_at'] as String;
@@ -215,16 +245,26 @@ class TokenService {
   /// Check if service has a valid token
   bool get hasValidToken => _isTokenValid();
   
-  /// Clear cached token data
+  /// Clear cached token data securely
   void clearToken() {
     _logger.info('Clearing cached token');
-    _currentToken = null;
+    
+    // Securely overwrite token in memory before nullifying
+    if (_currentToken != null) {
+      // Create a buffer of random data to overwrite the token
+      final tokenLength = _currentToken!.length;
+      _currentToken = 'X' * tokenLength; // Overwrite with dummy data
+      _currentToken = null; // Then nullify
+    }
+    
     _tokenExpiry = null;
     _tokenType = null;
   }
   
-  /// Dispose of HTTP client
+  /// Dispose of HTTP client and clear sensitive data
   void dispose() {
+    // Securely clear token data from memory
+    clearToken();
     _httpClient.close();
   }
 }

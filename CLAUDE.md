@@ -30,6 +30,7 @@ Parli is an AI-powered voice translator mobile application using OpenAI's Realti
 
 ### Flutter Development
 When implementing Flutter components:
+- **Preferred Flutter Version**: Use Flutter 3.35.0 for all development and CI/CD pipelines
 - Use proper state management (Provider, Riverpod, or Bloc pattern)
 - Implement platform-specific audio permissions handling
 - Ensure WebRTC implementation follows platform guidelines

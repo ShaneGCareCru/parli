@@ -7,11 +7,13 @@ import '../services/notification_service.dart';
 class PTTScreen extends StatefulWidget {
   final String languageA;
   final String languageB;
+  final TokenService? tokenService; // Add dependency injection
   
   const PTTScreen({
     super.key,
     this.languageA = "English",
     this.languageB = "中文",
+    this.tokenService, // Optional for backward compatibility
   });
 
   @override
@@ -26,6 +28,8 @@ class _PTTScreenState extends State<PTTScreen> {
   // Transport manager for connection handling
   TransportManager? _transportManager;
   String _connectionStatus = "Disconnected";
+  int _retryAttempts = 0;
+  static const int _maxRetryAttempts = 5;
 
   @override
   void initState() {
@@ -46,19 +50,33 @@ class _PTTScreenState extends State<PTTScreen> {
         _connectionStatus = "Connecting...";
       });
 
-      _transportManager = TransportManager();
+      // Use dependency injection with fallback to default
+      final tokenService = widget.tokenService ?? TokenService();
+      _transportManager = TransportManager(tokenService: tokenService);
       
-      // Listen to connection status updates
-      _transportManager!.status.listen((status) {
-        if (mounted) {
-          setState(() {
-            _connectionStatus = _getStatusString(status);
-          });
-        }
-      });
+      // Listen to connection status updates with error handling
+      _transportManager!.status.listen(
+        (status) {
+          if (mounted) {
+            setState(() {
+              _connectionStatus = _getStatusString(status);
+            });
+          }
+        },
+        onError: (error) {
+          if (mounted) {
+            setState(() {
+              _connectionStatus = "Status error: $error";
+            });
+          }
+        },
+      );
 
       // Attempt connection with token refresh
       await _transportManager!.connect();
+      
+      // Reset retry attempts on successful connection
+      _retryAttempts = 0;
       
     } catch (e) {
       if (mounted) {
@@ -80,8 +98,24 @@ class _PTTScreenState extends State<PTTScreen> {
     }
   }
 
-  /// Retry connection after error
+  /// Retry connection with exponential backoff
   Future<void> _retryConnection() async {
+    if (_retryAttempts >= _maxRetryAttempts) {
+      NotificationService.showInfo(
+        context, 
+        'Maximum retry attempts reached. Please check your connection.',
+      );
+      return;
+    }
+
+    _retryAttempts++;
+    final delay = Duration(seconds: (2 << _retryAttempts).clamp(2, 30));
+    
+    setState(() {
+      _connectionStatus = "Retrying in ${delay.inSeconds}s (attempt $_retryAttempts)...";
+    });
+    
+    await Future.delayed(delay);
     await _initializeConnection();
   }
 
@@ -106,7 +140,8 @@ class _PTTScreenState extends State<PTTScreen> {
 
   void _handleButtonAEvent(PTTEvent event) {
     setState(() {
-      _lastEvent = "Button A (${widget.languageA} → ${widget.languageB}): ${event.toString().split('.').last}";
+      // Fix: Use event.name instead of fragile string parsing
+      _lastEvent = "Button A (${widget.languageA} → ${widget.languageB}): ${event.name}";
       if (event == PTTEvent.press) {
         _isButtonBEnabled = false;
       } else if (event == PTTEvent.release) {
@@ -119,7 +154,8 @@ class _PTTScreenState extends State<PTTScreen> {
 
   void _handleButtonBEvent(PTTEvent event) {
     setState(() {
-      _lastEvent = "Button B (${widget.languageB} → ${widget.languageA}): ${event.toString().split('.').last}";
+      // Fix: Use event.name instead of fragile string parsing
+      _lastEvent = "Button B (${widget.languageB} → ${widget.languageA}): ${event.name}";
       if (event == PTTEvent.press) {
         _isButtonAEnabled = false;
       } else if (event == PTTEvent.release) {

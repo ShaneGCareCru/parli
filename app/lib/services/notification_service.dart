@@ -101,8 +101,23 @@ class NotificationService {
           textColor: Colors.white,
           onPressed: () {
             ScaffoldMessenger.of(context).hideCurrentSnackBar();
-            // TODO: Navigate to settings when implemented
-            _logger.info('Settings navigation not yet implemented');
+            // For now, show info dialog since settings screen isn't implemented yet
+            showDialog(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: const Text('Authentication Settings'),
+                content: const Text(
+                  'Please check your app configuration and ensure the token service is properly configured. '
+                  'Contact support if this issue persists.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('OK'),
+                  ),
+                ],
+              ),
+            );
           },
         );
         
