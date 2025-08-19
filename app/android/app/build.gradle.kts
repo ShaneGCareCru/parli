@@ -8,7 +8,7 @@ plugins {
 android {
     namespace = "com.parli.parli"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    ndkVersion = "27.0.12077973" // Required by flutter_webrtc plugin
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11

@@ -75,22 +75,8 @@ class TransportManager {
       _logger.info('Connecting with transport manager');
       
       // Fetch fresh token from token service
-      String token;
-      try {
-        token = await _tokenService.getToken();
-        _logger.info('Successfully obtained token from service');
-      } catch (e) {
-        _logger.severe('Failed to obtain token: $e');
-        // Re-throw TokenServiceException to be handled by caller
-        if (e is TokenServiceException) {
-          rethrow;
-        }
-        throw TokenServiceException(
-          'Failed to obtain authentication token',
-          TokenErrorType.unknown,
-          null,
-        );
-      }
+      final token = await _tokenService.getToken();
+      _logger.info('Successfully obtained token from service');
       
       _preferredTransport = preferWebSocket ? TransportType.webSocket : TransportType.webrtc;
       
@@ -218,14 +204,8 @@ class TransportManager {
     
     try {
       // Get fresh token for failover connection
-      String token;
-      try {
-        token = await _tokenService.getToken();
-        _logger.info('Obtained token for WebSocket failover');
-      } catch (e) {
-        _logger.severe('Failed to obtain token for failover: $e');
-        throw StateError('Token service unavailable for failover: $e');
-      }
+      final token = await _tokenService.getToken();
+      _logger.info('Obtained token for WebSocket failover');
       
       await _connectWebSocket(token);
       

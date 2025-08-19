@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:logging/logging.dart';
 
@@ -9,16 +8,20 @@ import 'package:logging/logging.dart';
 class TokenService {
   static final _logger = Logger('TokenService');
   
-  // Token service endpoint - configurable via environment
+  // Token service endpoint - configured at build time for security
   static const String _defaultBaseUrl = 'http://localhost:8000';
   final String _baseUrl;
   
-  /// Get base URL from environment or use default
+  /// Get base URL from build-time configuration
+  /// Use --dart-define TOKEN_SERVICE_URL=https://api.example.com during build
   static String _getBaseUrl() {
-    // Try environment variables first (for production)
-    final envUrl = Platform.environment['TOKEN_SERVICE_URL'] ??
-                   Platform.environment['PARLI_TOKEN_SERVICE_URL'];
-    return envUrl ?? _defaultBaseUrl;
+    // Use compile-time configuration instead of runtime environment variables
+    // This prevents exposure of production URLs in client-side code
+    const prodUrl = String.fromEnvironment(
+      'TOKEN_SERVICE_URL', 
+      defaultValue: _defaultBaseUrl,
+    );
+    return prodUrl;
   }
   
   // Cached token data
@@ -245,16 +248,20 @@ class TokenService {
   /// Check if service has a valid token
   bool get hasValidToken => _isTokenValid();
   
-  /// Clear cached token data securely
+  /// Clear cached token data
+  /// 
+  /// Note: Dart doesn't provide secure memory clearing capabilities.
+  /// For production use with highly sensitive tokens, consider using
+  /// platform channels to native secure storage implementations.
   void clearToken() {
     _logger.info('Clearing cached token');
     
-    // Securely overwrite token in memory before nullifying
+    // Note: This doesn't actually clear memory securely in Dart
+    // The string data may remain in memory until garbage collected
     if (_currentToken != null) {
-      // Create a buffer of random data to overwrite the token
       final tokenLength = _currentToken!.length;
-      _currentToken = 'X' * tokenLength; // Overwrite with dummy data
-      _currentToken = null; // Then nullify
+      _currentToken = 'X' * tokenLength; // Overwrite reference
+      _currentToken = null; // Clear reference
     }
     
     _tokenExpiry = null;

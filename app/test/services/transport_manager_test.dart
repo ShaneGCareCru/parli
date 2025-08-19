@@ -1,7 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:parli/services/transport_manager.dart';
-import 'package:parli/services/token_service.dart';
 
 void main() {
   group('TransportManager', () {

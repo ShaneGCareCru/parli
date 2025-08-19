@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../widgets/ptt_button.dart';
 import '../services/transport_manager.dart';
@@ -109,7 +110,9 @@ class _PTTScreenState extends State<PTTScreen> {
     }
 
     _retryAttempts++;
-    final delay = Duration(seconds: (2 << _retryAttempts).clamp(2, 30));
+    // Proper exponential backoff: 2^attempts seconds, clamped to max 30 seconds
+    final delaySeconds = math.pow(2, _retryAttempts).toInt().clamp(2, 30);
+    final delay = Duration(seconds: delaySeconds);
     
     setState(() {
       _connectionStatus = "Retrying in ${delay.inSeconds}s (attempt $_retryAttempts)...";
