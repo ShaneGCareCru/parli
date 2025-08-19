@@ -3,18 +3,18 @@ Parli Token Service
 FastAPI backend for ephemeral OpenAI token generation
 """
 
+import logging
+import os
+import secrets
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
-import os
-from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel, Field
-import openai
-import logging
-import secrets
-from typing import Optional
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -44,7 +44,7 @@ app.add_middleware(
 
 
 class TokenRequest(BaseModel):
-    """Request model for token creation (for future use with additional params)"""
+    """Request model for token creation (for future use)."""
 
     client_id: Optional[str] = Field(
         None, description="Optional client identifier for tracking"
@@ -100,7 +100,8 @@ async def create_ephemeral_token(
         if not api_key:
             logger.error("OpenAI API key not configured")
             raise HTTPException(
-                status_code=500, detail="Service configuration error: API key missing"
+                status_code=500,
+                detail="Service configuration error: API key missing",
             )
 
         # Validate API key format (basic check)
@@ -111,7 +112,8 @@ async def create_ephemeral_token(
                 detail="Service configuration error: Invalid API key format",
             )
 
-        # TODO: Initialize OpenAI client when ephemeral token API becomes available
+        # TODO: Initialize OpenAI client when ephemeral token API becomes
+        # available
         # client = openai.AsyncOpenAI(api_key=api_key)
         # try:
         #     ephemeral_token = await client.tokens.create(
@@ -121,19 +123,27 @@ async def create_ephemeral_token(
         #     token = ephemeral_token.token
         # except openai.OpenAIError as e:
         #     logger.error(f"OpenAI API error: {str(e)}")
-        #     raise HTTPException(status_code=502, detail="Failed to create token from OpenAI")
+        #     raise HTTPException(
+        #         status_code=502,
+        #         detail="Failed to create token from OpenAI"
+        #     )
 
-        # SECURITY WARNING: Returning API key directly is temporary and MUST be replaced
-        # before production deployment. This violates security guidelines.
-        # TODO: Replace with actual ephemeral token API when available from OpenAI
+        # SECURITY WARNING: Returning API key directly is temporary and
+        # MUST be replaced
+        # before production deployment. This violates security
+        # guidelines.
+        # TODO: Replace with actual ephemeral token API when available
+        # from OpenAI
 
-        # For now, create a mock ephemeral token identifier (NOT for production)
+        # For now, create a mock ephemeral token identifier
+        # (NOT for production)
         # This helps track token usage in logs while we wait for the real API
         token_id = secrets.token_urlsafe(16)
         expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
 
         logger.info(
-            f"Created ephemeral token {token_id[:8]}... for client {client_id}, "
+            f"Created ephemeral token {token_id[:8]}... "
+            f"for client {client_id}, "
             f"expires at: {expires_at.isoformat()}"
         )
 
@@ -147,7 +157,8 @@ async def create_ephemeral_token(
         raise
     except Exception as e:
         logger.error(
-            f"Unexpected error creating ephemeral token: {str(e)}", exc_info=True
+            f"Unexpected error creating ephemeral token: {str(e)}",
+            exc_info=True,
         )
         raise HTTPException(
             status_code=500, detail="Internal server error during token creation"
@@ -158,4 +169,3 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
-

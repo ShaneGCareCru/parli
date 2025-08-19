@@ -10,7 +10,7 @@ on:
       - 'docker-compose.yml'
 
 env:
-  FLUTTER_VERSION: '3.16.0'
+  FLUTTER_VERSION: '3.35.0'
   PYTHON_VERSION: '3.11'
 
 jobs:
@@ -56,14 +56,14 @@ jobs:
         working-directory: app
 
       - name: Upload Android artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: android-debug-apk
           path: app/build/app/outputs/flutter-apk/app-debug.apk
           retention-days: 7
 
       - name: Upload iOS artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ios-debug-app
           path: app/build/ios/Debug-iphoneos/Runner.app/
@@ -112,8 +112,8 @@ jobs:
         working-directory: .
 
       - name: Run pytest (tests)
-        run: pytest token-service/tests --cov=token-service/src --cov-report=xml
-        working-directory: .
+        run: PYTHONPATH=. pytest tests --cov=src --cov-report=xml
+        working-directory: ./token-service
         env:
           OPENAI_API_KEY: mock_key_for_testing
 
@@ -143,6 +143,7 @@ jobs:
         with:
           context: ./token-service
           push: false
+          load: true
           tags: parli-token-service:test
           cache-from: type=gha
           cache-to: type=gha,mode=max
