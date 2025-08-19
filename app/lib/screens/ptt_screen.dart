@@ -1,0 +1,177 @@
+import 'package:flutter/material.dart';
+import '../widgets/ptt_button.dart';
+
+class PTTScreen extends StatefulWidget {
+  final String languageA;
+  final String languageB;
+  
+  const PTTScreen({
+    super.key,
+    this.languageA = "English",
+    this.languageB = "中文",
+  });
+
+  @override
+  State<PTTScreen> createState() => _PTTScreenState();
+}
+
+class _PTTScreenState extends State<PTTScreen> {
+  bool _isButtonAEnabled = true;
+  bool _isButtonBEnabled = true;
+  String _lastEvent = "No events yet";
+
+  void _handleButtonAEvent(PTTEvent event) {
+    setState(() {
+      _lastEvent = "Button A (${widget.languageA} → ${widget.languageB}): ${event.toString().split('.').last}";
+      if (event == PTTEvent.press) {
+        _isButtonBEnabled = false;
+      } else if (event == PTTEvent.release) {
+        _isButtonBEnabled = true;
+      }
+    });
+    
+    _logEvent("Button A", event);
+  }
+
+  void _handleButtonBEvent(PTTEvent event) {
+    setState(() {
+      _lastEvent = "Button B (${widget.languageB} → ${widget.languageA}): ${event.toString().split('.').last}";
+      if (event == PTTEvent.press) {
+        _isButtonAEnabled = false;
+      } else if (event == PTTEvent.release) {
+        _isButtonAEnabled = true;
+      }
+    });
+    
+    _logEvent("Button B", event);
+  }
+
+  void _logEvent(String buttonName, PTTEvent event) {
+    debugPrint("$buttonName event: ${event.toString()}");
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Parli - Voice Translator'),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          children: [
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  children: [
+                    Text(
+                      'Translation Mode',
+                      style: Theme.of(context).textTheme.headlineSmall,
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(widget.languageA, style: const TextStyle(fontSize: 16)),
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 16),
+                          child: Icon(Icons.swap_horiz, size: 24),
+                        ),
+                        Text(widget.languageB, style: const TextStyle(fontSize: 16)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 32),
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  'Hold to Speak',
+                  style: Theme.of(context).textTheme.headlineMedium,
+                ),
+                const SizedBox(height: 48),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                      Column(
+                        children: [
+                          PTTButton(
+                            label: widget.languageA,
+                            onEvent: _handleButtonAEvent,
+                            isEnabled: _isButtonAEnabled,
+                            primaryColor: Colors.blue,
+                            icon: Icons.mic,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'To ${widget.languageB}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Column(
+                        children: [
+                          PTTButton(
+                            label: widget.languageB,
+                            onEvent: _handleButtonBEvent,
+                            isEnabled: _isButtonBEnabled,
+                            primaryColor: Colors.green,
+                            icon: Icons.mic,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'To ${widget.languageA}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            const SizedBox(height: 32),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Debug Info',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Last Event: $_lastEvent',
+                      style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Button A Enabled: $_isButtonAEnabled',
+                      style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+                    ),
+                    Text(
+                      'Button B Enabled: $_isButtonBEnabled',
+                      style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
