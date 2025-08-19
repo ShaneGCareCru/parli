@@ -10,7 +10,7 @@ on:
       - 'docker-compose.yml'
 
 env:
-  FLUTTER_VERSION: '3.24.3'
+  FLUTTER_VERSION: '3.35.0'
   PYTHON_VERSION: '3.11'
 
 jobs:
