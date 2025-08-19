@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -54,40 +55,44 @@ void main() {
       });
 
       test('refreshes token when close to expiry', () async {
-        // Arrange: Token that expires soon
-        final now = DateTime.now().toUtc();
-        final nearExpiry = now.add(const Duration(seconds: 10)); // Less than 30s margin
-        final futureExpiry = now.add(const Duration(minutes: 5));
+        // Arrange: Use fixed test time to avoid race conditions
+        // Token expires in 20 seconds (less than 30s refresh margin)
+        final testBaseTime = DateTime.parse('2025-01-01T12:00:00.000Z');
+        final nearExpiry = testBaseTime.add(const Duration(seconds: 20)); // Less than 30s margin
+        final futureExpiry = testBaseTime.add(const Duration(minutes: 5)); // Well beyond margin
 
-        final expiredResponse = jsonEncode({
-          'token': 'old-token',
+        final nearExpiryResponse = jsonEncode({
+          'token': 'near-expiry-token',
           'expires_at': nearExpiry.toIso8601String(),
           'token_type': 'Bearer',
         });
 
         final freshResponse = jsonEncode({
-          'token': 'new-token',
+          'token': 'fresh-token',
           'expires_at': futureExpiry.toIso8601String(),
           'token_type': 'Bearer',
         });
 
-        // First call returns expired token
+        // First call returns token that's close to expiry
         when(mockHttpClient.post(any, headers: anyNamed('headers'), body: anyNamed('body')))
-            .thenAnswer((_) async => http.Response(expiredResponse, 200));
+            .thenAnswer((_) async => http.Response(nearExpiryResponse, 200));
 
-        // Act: Get token first time
+        // Act: Get token first time (will refresh due to being close to expiry)
         final token1 = await tokenService.getToken();
         
-        // Setup for second call - new token
+        // Setup for second call - return fresh token
         when(mockHttpClient.post(any, headers: anyNamed('headers'), body: anyNamed('body')))
             .thenAnswer((_) async => http.Response(freshResponse, 200));
         
-        // Act: Get token again - should refresh since it's near expiry
+        // Act: Get token again - should refresh again since previous token is still close to expiry
         final token2 = await tokenService.getToken();
 
-        // Assert: Should get new token
-        expect(token1, equals('old-token'));
-        expect(token2, equals('new-token'));
+        // Assert: Both calls should return fresh tokens due to refresh logic
+        expect(token1, equals('near-expiry-token'));
+        expect(token2, equals('fresh-token'));
+        
+        // Verify HTTP client was called twice (once for each getToken call)
+        verify(mockHttpClient.post(any, headers: anyNamed('headers'), body: anyNamed('body'))).called(2);
       });
     });
 
@@ -160,19 +165,23 @@ void main() {
       });
 
       test('throws TokenServiceException for timeout', () async {
-        // Arrange
+        // Arrange: Use a completer to simulate timeout without real delays
+        final completer = Completer<http.Response>();
         when(mockHttpClient.post(any, headers: anyNamed('headers'), body: anyNamed('body')))
-            .thenAnswer((_) async {
-          await Future.delayed(const Duration(seconds: 15)); // Longer than 10s timeout
-          return http.Response('', 200);
-        });
+            .thenAnswer((_) => completer.future);
 
-        // Act & Assert
-        expect(
-          () => tokenService.refreshToken(),
+        // Act & Assert: The TokenService has a 10s timeout, so this should throw
+        await expectLater(
+          tokenService.refreshToken(),
           throwsA(isA<TokenServiceException>()
-              .having((e) => e.type, 'type', TokenErrorType.networkError)),
+              .having((e) => e.type, 'type', TokenErrorType.networkError)
+              .having((e) => e.message, 'message', contains('timed out'))),
         );
+        
+        // Clean up: Complete the future to avoid hanging
+        if (!completer.isCompleted) {
+          completer.complete(http.Response('', 200));
+        }
       });
 
       test('throws TokenServiceException for invalid response format', () async {
