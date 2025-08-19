@@ -2,13 +2,12 @@
 Tests for the token service main module
 """
 
-import pytest
-from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock
 import os
 from datetime import datetime, timezone
+from unittest.mock import patch
 
-from src.main import app, TokenRequest
+from fastapi.testclient import TestClient
+from src.main import app
 
 client = TestClient(app)
 
@@ -71,14 +70,16 @@ def test_create_ephemeral_token_with_client_id():
 def test_rate_limiting_configuration():
     """Test that rate limiting is properly configured"""
     from src.main import create_ephemeral_token, limiter
-    
+
     # Verify the rate limiter is configured
     assert limiter is not None, "Rate limiter should be configured"
-    
+
     # Verify the endpoint has rate limiting decorator applied
     # Check if the function has been wrapped by the decorator
-    assert hasattr(create_ephemeral_token, '__wrapped__'), "Rate limiting decorator should be applied"
-    
+    assert hasattr(
+        create_ephemeral_token, "__wrapped__"
+    ), "Rate limiting decorator should be applied"
+
     # Test normal operation (should not hit rate limit in single request)
     response = client.post("/realtime/ephemeral")
     assert response.status_code == 200
@@ -87,19 +88,21 @@ def test_rate_limiting_configuration():
 @patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test_key_1234567890abcdef"})
 def test_rate_limiting_integration():
     """Test rate limiting integration with FastAPI"""
-    from src.main import app
     from slowapi import Limiter
-    
+    from src.main import app
+
     # Verify the app has the limiter configured
-    assert hasattr(app.state, 'limiter'), "App should have limiter configured"
-    assert isinstance(app.state.limiter, Limiter), "App limiter should be Limiter instance"
-    
+    assert hasattr(app.state, "limiter"), "App should have limiter configured"
+    assert isinstance(
+        app.state.limiter, Limiter
+    ), "App limiter should be Limiter instance"
+
     # Test that multiple requests work (within rate limit)
     responses = []
     for i in range(3):  # Well within the 10/minute limit
         response = client.post("/realtime/ephemeral")
         responses.append(response)
         assert response.status_code == 200
-    
+
     # All requests should succeed
     assert all(r.status_code == 200 for r in responses)
