@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import '../widgets/ptt_button.dart';
+import '../services/transport_manager.dart';
+import '../services/token_service.dart';
+import '../services/notification_service.dart';
 
 class PTTScreen extends StatefulWidget {
   final String languageA;
@@ -19,6 +22,87 @@ class _PTTScreenState extends State<PTTScreen> {
   bool _isButtonAEnabled = true;
   bool _isButtonBEnabled = true;
   String _lastEvent = "No events yet";
+  
+  // Transport manager for connection handling
+  TransportManager? _transportManager;
+  String _connectionStatus = "Disconnected";
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeConnection();
+  }
+
+  @override
+  void dispose() {
+    _transportManager?.close();
+    super.dispose();
+  }
+
+  /// Initialize transport manager and attempt connection
+  Future<void> _initializeConnection() async {
+    try {
+      setState(() {
+        _connectionStatus = "Connecting...";
+      });
+
+      _transportManager = TransportManager();
+      
+      // Listen to connection status updates
+      _transportManager!.status.listen((status) {
+        if (mounted) {
+          setState(() {
+            _connectionStatus = _getStatusString(status);
+          });
+        }
+      });
+
+      // Attempt connection with token refresh
+      await _transportManager!.connect();
+      
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _connectionStatus = "Connection failed";
+        });
+        
+        // Handle token service errors with user-visible notifications
+        if (e is TokenServiceException) {
+          NotificationService.showTokenError(
+            context, 
+            e, 
+            onRetry: _retryConnection,
+          );
+        } else {
+          NotificationService.showInfo(context, 'Connection failed: $e');
+        }
+      }
+    }
+  }
+
+  /// Retry connection after error
+  Future<void> _retryConnection() async {
+    await _initializeConnection();
+  }
+
+  /// Convert transport status to user-friendly string
+  String _getStatusString(TransportStatus status) {
+    switch (status.state) {
+      case TransportState.connecting:
+        return "Connecting (${status.activeTransport.name})...";
+      case TransportState.connected:
+        final transportName = status.activeTransport == TransportType.webrtc 
+            ? "WebRTC" : "WebSocket";
+        final failover = status.failedOver ? " (failover)" : "";
+        return "Connected ($transportName)$failover";
+      case TransportState.error:
+        return "Error: ${status.error ?? 'Unknown error'}";
+      case TransportState.failed:
+        return "Failed: ${status.error ?? 'Connection failed'}";
+      case TransportState.disconnected:
+        return "Disconnected";
+    }
+  }
 
   void _handleButtonAEvent(PTTEvent event) {
     setState(() {
@@ -147,6 +231,16 @@ class _PTTScreenState extends State<PTTScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Text(
+                      'Connection Status',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Status: $_connectionStatus',
+                      style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+                    ),
+                    const SizedBox(height: 8),
                     Text(
                       'Debug Info',
                       style: Theme.of(context).textTheme.titleMedium,

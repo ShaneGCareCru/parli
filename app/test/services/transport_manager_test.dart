@@ -108,7 +108,7 @@ void main() {
       
       try {
         // Test with completely invalid token/URL
-        await failureManager.connect(token: 'invalid-token');
+        await failureManager.connect();
         // If no exception is thrown, we still need to verify proper handling
         expect(failureManager.activeTransport, isNot(equals(TransportType.none)));
       } catch (e) {

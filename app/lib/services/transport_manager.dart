@@ -4,6 +4,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:logging/logging.dart';
 import 'webrtc_client.dart';
 import 'websocket_client.dart';
+import 'token_service.dart';
 
 /// Manages transport selection between WebRTC (primary) and WebSocket (fallback)
 /// Handles automatic failover and manual transport switching
@@ -16,9 +17,8 @@ class TransportManager {
   TransportType _activeTransport = TransportType.none;
   TransportType _preferredTransport = TransportType.webrtc;
   
-  // Secure token storage with expiration tracking
-  String? _currentToken;
-  DateTime? _tokenExpiry;
+  // Token service for ephemeral token management
+  final TokenService _tokenService;
   StreamSubscription? _webrtcMessageSub;
   StreamSubscription? _webrtcAudioSub;
   StreamSubscription? _webrtcStateSub;
@@ -36,6 +36,10 @@ class TransportManager {
       StreamController<Uint8List>.broadcast();
   final StreamController<TransportStatus> _statusController = 
       StreamController<TransportStatus>.broadcast();
+  
+  /// Initialize transport manager with token service
+  TransportManager({TokenService? tokenService}) 
+      : _tokenService = tokenService ?? TokenService();
   
   /// Stream of incoming messages from active transport
   Stream<Map<String, dynamic>> get messages => _messageController.stream;
@@ -57,10 +61,9 @@ class TransportManager {
 
   /// Initialize and connect using optimal transport
   /// 
-  /// [token] - Ephemeral token from token service
+  /// Automatically fetches ephemeral token from backend service
   /// [preferWebSocket] - Force WebSocket usage (for travel mode)
   Future<void> connect({
-    required String token,
     bool preferWebSocket = false,
   }) async {
     if (_isConnecting) {
@@ -71,10 +74,23 @@ class TransportManager {
     try {
       _logger.info('Connecting with transport manager');
       
-      // Store token with 5-minute expiration for failover use (per CLAUDE.md)
-      // Use UTC for consistent international deployment
-      _currentToken = token;
-      _tokenExpiry = DateTime.now().toUtc().add(const Duration(minutes: 5));
+      // Fetch fresh token from token service
+      String token;
+      try {
+        token = await _tokenService.getToken();
+        _logger.info('Successfully obtained token from service');
+      } catch (e) {
+        _logger.severe('Failed to obtain token: $e');
+        // Re-throw TokenServiceException to be handled by caller
+        if (e is TokenServiceException) {
+          rethrow;
+        }
+        throw TokenServiceException(
+          'Failed to obtain authentication token',
+          TokenErrorType.unknown,
+          null,
+        );
+      }
       
       _preferredTransport = preferWebSocket ? TransportType.webSocket : TransportType.webrtc;
       
@@ -201,16 +217,17 @@ class TransportManager {
     _logger.info('Performing automatic failover to WebSocket');
     
     try {
-      // Check token availability and expiration
-      if (_currentToken == null || _tokenExpiry == null) {
-        throw StateError('No token available for failover');
+      // Get fresh token for failover connection
+      String token;
+      try {
+        token = await _tokenService.getToken();
+        _logger.info('Obtained token for WebSocket failover');
+      } catch (e) {
+        _logger.severe('Failed to obtain token for failover: $e');
+        throw StateError('Token service unavailable for failover: $e');
       }
       
-      if (DateTime.now().toUtc().isAfter(_tokenExpiry!.toUtc())) {
-        throw StateError('Token expired, cannot perform failover. New token required.');
-      }
-      
-      await _connectWebSocket(_currentToken!);
+      await _connectWebSocket(token);
       
       // Close WebRTC connection and cleanup subscriptions
       await _webrtcStateSub?.cancel();
@@ -408,9 +425,8 @@ class TransportManager {
     _webrtcClient = null;
     _websocketClient = null;
     
-    // Securely clear token and expiry
-    _currentToken = null;
-    _tokenExpiry = null;
+    // Dispose of token service
+    _tokenService.dispose();
     _activeTransport = TransportType.none;
     
     await _messageController.close();
