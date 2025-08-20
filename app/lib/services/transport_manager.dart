@@ -444,6 +444,32 @@ class TransportManager {
         throw StateError('No active transport connection');
     }
   }
+
+  /// Commit audio buffer to trigger translation (WebSocket only)
+  Future<void> commitAudioBuffer() async {
+    if (_useDualSessions) {
+      // For dual sessions, commit is handled by session manager
+      return;
+    }
+    
+    switch (_activeTransport) {
+      case TransportType.webSocket:
+        final client = _websocketClient;
+        if (client == null) {
+          throw StateError('WebSocket client not available');
+        }
+        await client.commitAudioBuffer();
+        // Generate response to trigger translation
+        await client.generateResponse();
+        break;
+      case TransportType.webrtc:
+        // WebRTC doesn't need explicit commit - audio is streamed
+        _logger.info('Audio commit not needed for WebRTC transport');
+        break;
+      case TransportType.none:
+        throw StateError('No active transport connection');
+    }
+  }
   
   /// Start translation in specified direction (dual session mode only)
   Future<void> startTranslation(SessionDirection direction) async {

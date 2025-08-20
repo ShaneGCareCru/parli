@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
@@ -28,6 +29,7 @@ class AudioService {
   
   String? _currentRecordingPath;
   Timer? _amplitudeTimer;
+  final List<List<int>> _audioBuffer = [];
 
   Stream<AudioCaptureState> get stateStream => 
       _stateController?.stream ?? const Stream.empty();
@@ -182,6 +184,66 @@ class AudioService {
   }
 
   String? get lastRecordingPath => _currentRecordingPath;
+
+  /// Start buffering audio data for later retrieval
+  void startBuffering() {
+    _audioBuffer.clear();
+    debugPrint('Started audio buffering');
+  }
+
+  /// Stop buffering and return all captured audio data as PCM16
+  List<int> stopBufferingAndGetAudio() {
+    final allAudioData = <int>[];
+    for (final chunk in _audioBuffer) {
+      allAudioData.addAll(chunk);
+    }
+    final result = List<int>.from(allAudioData);
+    _audioBuffer.clear();
+    debugPrint('Stopped audio buffering, captured ${result.length} audio samples');
+    return result;
+  }
+
+  /// Clear the audio buffer without returning data
+  void clearBuffer() {
+    _audioBuffer.clear();
+    debugPrint('Audio buffer cleared');
+  }
+
+  /// Get recorded audio data as PCM16 from the last recording
+  Future<Uint8List?> getRecordedAudioAsPCM16() async {
+    if (_currentRecordingPath == null) {
+      debugPrint('No recording path available');
+      return null;
+    }
+
+    try {
+      final file = File(_currentRecordingPath!);
+      if (!await file.exists()) {
+        debugPrint('Recording file does not exist: $_currentRecordingPath');
+        return null;
+      }
+
+      // Read the WAV file bytes
+      final audioBytes = await file.readAsBytes();
+      debugPrint('Read ${audioBytes.length} bytes from recording file');
+
+      // For WAV files, we need to skip the header (typically 44 bytes)
+      // and extract the PCM data
+      if (audioBytes.length < 44) {
+        debugPrint('Audio file too small to contain valid WAV header');
+        return null;
+      }
+
+      // Skip WAV header (44 bytes) and return PCM16 data
+      final pcmData = audioBytes.sublist(44);
+      debugPrint('Extracted ${pcmData.length} bytes of PCM16 data');
+      
+      return Uint8List.fromList(pcmData);
+    } catch (e) {
+      debugPrint('Error reading recorded audio: $e');
+      return null;
+    }
+  }
 
   Future<void> dispose() async {
     _stopAmplitudeMonitoring();

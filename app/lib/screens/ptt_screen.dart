@@ -229,6 +229,7 @@ class _PTTScreenState extends State<PTTScreen> {
                             isEnabled: _isButtonAEnabled,
                             primaryColor: Colors.blue,
                             icon: Icons.mic,
+                            transportManager: _transportManager,
                           ),
                           const SizedBox(height: 8),
                           Text(
@@ -248,6 +249,7 @@ class _PTTScreenState extends State<PTTScreen> {
                             isEnabled: _isButtonBEnabled,
                             primaryColor: Colors.green,
                             icon: Icons.mic,
+                            transportManager: _transportManager,
                           ),
                           const SizedBox(height: 8),
                           Text(
