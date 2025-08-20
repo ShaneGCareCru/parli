@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/audio_service.dart';
+import '../services/transport_manager.dart';
 import 'waveform_widget.dart';
 
 enum PTTButtonState { idle, pressed, disabled }
@@ -15,6 +16,7 @@ class PTTButton extends StatefulWidget {
   final Color disabledColor;
   final IconData? icon;
   final Duration holdThreshold;
+  final TransportManager? transportManager;
 
   const PTTButton({
     super.key,
@@ -25,6 +27,7 @@ class PTTButton extends StatefulWidget {
     this.disabledColor = Colors.grey,
     this.icon,
     this.holdThreshold = const Duration(milliseconds: 500),
+    this.transportManager,
   });
 
   @override
@@ -138,8 +141,8 @@ class _PTTButtonState extends State<PTTButton>
     });
     _animationController.reverse();
     
-    // Stop audio recording on release
-    _stopRecording();
+    // Stop audio recording on release and send to WebSocket
+    _stopRecordingAndSend();
     
     widget.onEvent(PTTEvent.release);
   }
@@ -155,11 +158,28 @@ class _PTTButtonState extends State<PTTButton>
     }
   }
   
-  void _stopRecording() async {
+  void _stopRecordingAndSend() async {
     try {
+      // Stop recording first
       await _audioService.stopRecording();
+      
+      // Get the recorded audio as PCM16 data
+      final audioData = await _audioService.getRecordedAudioAsPCM16();
+      
+      if (audioData != null && audioData.isNotEmpty && widget.transportManager != null) {
+        debugPrint('Sending ${audioData.length} bytes of audio data to transport manager');
+        
+        // Send audio data to the transport manager
+        await widget.transportManager!.sendAudio(audioData);
+        
+        // Commit the audio buffer to trigger translation
+        await widget.transportManager!.commitAudioBuffer();
+        debugPrint('Audio buffer committed for translation');
+      } else {
+        debugPrint('No audio data to send or transport manager not available');
+      }
     } catch (e) {
-      debugPrint('Error stopping recording: $e');
+      debugPrint('Error stopping recording and sending audio: $e');
     }
   }
 
