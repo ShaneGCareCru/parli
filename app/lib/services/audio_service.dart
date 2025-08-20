@@ -81,21 +81,14 @@ class AudioService {
     try {
       _updateState(AudioCaptureState.starting);
 
-      final hasPermission = await Permission.microphone.isGranted;
+      final hasPermission = await _recorder.hasPermission();
       if (!hasPermission) {
         final granted = await requestMicrophonePermission();
         if (!granted) return false;
       }
 
-      final isSupported = await _recorder.hasPermission();
-      if (!isSupported) {
-        debugPrint('Recording not supported or permission denied');
-        _updateState(AudioCaptureState.permissionDenied);
-        return false;
-      }
-
       const config = RecordConfig(
-        encoder: AudioEncoder.pcm16bits,
+        encoder: AudioEncoder.wav,
         sampleRate: 16000,
         bitRate: 128000,
         numChannels: 1,
@@ -103,7 +96,7 @@ class AudioService {
 
       // Generate temporary file path for recording
       final directory = await getTemporaryDirectory();
-      final path = '${directory.path}/recording_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      final path = '${directory.path}/recording_${DateTime.now().millisecondsSinceEpoch}.wav';
       
       await _recorder.start(config, path: path);
       _updateState(AudioCaptureState.recording);
@@ -149,18 +142,21 @@ class AudioService {
 
   void _startAmplitudeMonitoring() {
     _amplitudeTimer?.cancel();
-    _amplitudeTimer = Timer.periodic(
-      const Duration(milliseconds: 100),
-      (timer) async {
-        try {
-          final amplitude = await _recorder.getAmplitude();
-          final normalizedAmplitude = _normalizeAmplitude(amplitude.current);
-          _amplitudeController?.add(normalizedAmplitude);
-        } catch (e) {
-          debugPrint('Failed to get amplitude: $e');
-        }
-      },
-    );
+    // Only start monitoring if there are active listeners
+    if (_amplitudeController?.hasListener == true) {
+      _amplitudeTimer = Timer.periodic(
+        const Duration(milliseconds: 100),
+        (timer) async {
+          try {
+            final amplitude = await _recorder.getAmplitude();
+            final normalizedAmplitude = _normalizeAmplitude(amplitude.current);
+            _amplitudeController?.add(normalizedAmplitude);
+          } catch (e) {
+            debugPrint('Failed to get amplitude: $e');
+          }
+        },
+      );
+    }
   }
 
   void _stopAmplitudeMonitoring() {
@@ -196,9 +192,16 @@ class AudioService {
     
     await _recorder.dispose();
     
-    await _stateController?.close();
-    await _audioDataController?.close();
-    await _amplitudeController?.close();
+    // Check for active listeners before closing
+    if (_stateController?.hasListener == true) {
+      await _stateController?.close();
+    }
+    if (_audioDataController?.hasListener == true) {
+      await _audioDataController?.close();
+    }
+    if (_amplitudeController?.hasListener == true) {
+      await _amplitudeController?.close();
+    }
     
     _stateController = null;
     _audioDataController = null;

@@ -28,10 +28,12 @@ class _WaveformWidgetState extends State<WaveformWidget>
   late List<AnimationController> _controllers;
   late List<Animation<double>> _animations;
   final List<double> _barHeights = [];
+  late final math.Random _random;
 
   @override
   void initState() {
     super.initState();
+    _random = math.Random();
     _initializeAnimations();
   }
 
@@ -74,7 +76,7 @@ class _WaveformWidgetState extends State<WaveformWidget>
     if (!widget.isActive) return;
 
     for (int i = 0; i < widget.barCount; i++) {
-      final randomFactor = 0.7 + (math.Random().nextDouble() * 0.6);
+      final randomFactor = 0.7 + (_random.nextDouble() * 0.6);
       final targetHeight = (widget.amplitude * randomFactor).clamp(0.2, 1.0);
       
       _controllers[i].animateTo(targetHeight);

@@ -63,23 +63,31 @@ class _PTTButtonState extends State<PTTButton>
   }
   
   void _initializeAudioService() async {
-    await _audioService.initialize();
-    
-    _amplitudeSubscription = _audioService.amplitudeStream.listen((amplitude) {
-      if (mounted) {
-        setState(() {
-          _currentAmplitude = amplitude;
-        });
+    try {
+      final success = await _audioService.initialize();
+      if (!success) {
+        debugPrint('Failed to initialize AudioService');
+        return;
       }
-    });
-    
-    _audioStateSubscription = _audioService.stateStream.listen((state) {
-      if (mounted) {
-        setState(() {
-          _isRecording = state == AudioCaptureState.recording;
-        });
-      }
-    });
+      
+      _amplitudeSubscription = _audioService.amplitudeStream.listen((amplitude) {
+        if (mounted) {
+          setState(() {
+            _currentAmplitude = amplitude;
+          });
+        }
+      });
+      
+      _audioStateSubscription = _audioService.stateStream.listen((state) {
+        if (mounted) {
+          setState(() {
+            _isRecording = state == AudioCaptureState.recording;
+          });
+        }
+      });
+    } catch (e) {
+      debugPrint('Error initializing AudioService: $e');
+    }
   }
 
   @override
