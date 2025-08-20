@@ -5,6 +5,45 @@ import 'package:logging/logging.dart';
 import 'webrtc_client.dart';
 import 'token_service.dart';
 
+/// Configuration for Realtime session parameters
+class RealtimeSessionConfig {
+  final String voice;
+  final String inputAudioFormat;
+  final String outputAudioFormat;
+  final double vadThreshold;
+  final int vadPrefixPaddingMs;
+  final int vadSilenceDurationMs;
+  final double temperature;
+  final int maxResponseOutputTokens;
+
+  const RealtimeSessionConfig({
+    this.voice = 'alloy',
+    this.inputAudioFormat = 'pcm16',
+    this.outputAudioFormat = 'pcm16',
+    this.vadThreshold = 0.5,
+    this.vadPrefixPaddingMs = 300,
+    this.vadSilenceDurationMs = 200,
+    this.temperature = 0.6,
+    this.maxResponseOutputTokens = 4096,
+  });
+
+  /// Create configuration optimized for low latency
+  static const RealtimeSessionConfig lowLatency = RealtimeSessionConfig(
+    vadThreshold: 0.3,
+    vadPrefixPaddingMs: 200,
+    vadSilenceDurationMs: 150,
+    temperature: 0.4,
+  );
+
+  /// Create configuration optimized for accuracy
+  static const RealtimeSessionConfig highAccuracy = RealtimeSessionConfig(
+    vadThreshold: 0.7,
+    vadPrefixPaddingMs: 400,
+    vadSilenceDurationMs: 300,
+    temperature: 0.8,
+  );
+}
+
 /// Manages dual OpenAI Realtime API sessions for bidirectional translation
 /// Maintains two persistent sessions: A→B (e.g., EN→ZH) and B→A (e.g., ZH→EN)
 /// This prevents context switching overhead and enables true real-time translation
@@ -21,6 +60,7 @@ class RealtimeSessionManager {
   // Session configuration
   final String _languageA;
   final String _languageB;
+  final RealtimeSessionConfig _sessionConfig;
   
   // Stream subscriptions for session management
   StreamSubscription? _sessionABMessages;
@@ -39,19 +79,26 @@ class RealtimeSessionManager {
   // Session state tracking
   SessionDirection? _activeDirection;
   bool _isInitializing = false;
+  Completer<void>? _initializationCompleter;
+  
+  // Cancellation token for proper async disposal
+  bool _isDisposed = false;
   
   /// Initialize session manager with language pair
   /// 
   /// [languageA] - Source language (e.g., 'en')
   /// [languageB] - Target language (e.g., 'zh-CN')
   /// [tokenService] - Token service for authentication
+  /// [sessionConfig] - Configuration for session parameters
   RealtimeSessionManager({
     required String languageA,
     required String languageB,
     TokenService? tokenService,
+    RealtimeSessionConfig? sessionConfig,
   }) : _languageA = languageA,
        _languageB = languageB,
-       _tokenService = tokenService ?? TokenService();
+       _tokenService = tokenService ?? TokenService(),
+       _sessionConfig = sessionConfig ?? const RealtimeSessionConfig();
 
   /// Stream of translation messages from both sessions
   Stream<TranslationMessage> get messages => _messageController.stream;
@@ -74,11 +121,18 @@ class RealtimeSessionManager {
   /// Creates persistent WebRTC connections to OpenAI Realtime API
   /// for both translation directions to avoid context switching
   Future<void> initialize() async {
+    if (_isDisposed) {
+      throw StateError('Session manager has been disposed');
+    }
+    
+    // If already initializing, wait for the existing initialization to complete
     if (_isInitializing) {
-      throw StateError('Session manager already initializing');
+      await _initializationCompleter?.future;
+      return;
     }
     
     _isInitializing = true;
+    _initializationCompleter = Completer<void>();
     _logger.info('Initializing dual Realtime sessions ($_languageA↔$_languageB)');
     
     try {
@@ -88,14 +142,22 @@ class RealtimeSessionManager {
         message: 'Establishing translation sessions...',
       ));
 
-      // Get ephemeral token for both sessions
-      final token = await _tokenService.getToken();
-      _logger.info('Obtained ephemeral token for session initialization');
+      // Get separate ephemeral tokens for each session for security isolation
+      final [tokenAB, tokenBA] = await Future.wait([
+        _tokenService.getToken(),
+        _tokenService.getToken(),
+      ]);
+      _logger.info('Obtained separate ephemeral tokens for session initialization');
+
+      // Check if disposal was requested during token fetch
+      if (_isDisposed) {
+        throw StateError('Session manager disposed during initialization');
+      }
 
       // Initialize both sessions concurrently for optimal startup time
       await Future.wait([
-        _initializeSessionAB(token),
-        _initializeSessionBA(token),
+        _initializeSessionAB(tokenAB),
+        _initializeSessionBA(tokenBA),
       ]);
 
       _updateStatus(SessionStatus(
@@ -105,6 +167,7 @@ class RealtimeSessionManager {
       ));
 
       _logger.info('Dual Realtime sessions initialized successfully');
+      _initializationCompleter?.complete();
       
     } catch (e) {
       _logger.severe('Failed to initialize Realtime sessions: $e');
@@ -113,9 +176,11 @@ class RealtimeSessionManager {
         sessionBA: SessionState.error,
         message: 'Session initialization failed: $e',
       ));
+      _initializationCompleter?.completeError(e);
       rethrow;
     } finally {
       _isInitializing = false;
+      _initializationCompleter = null;
     }
   }
 
@@ -185,30 +250,30 @@ class RealtimeSessionManager {
   ) async {
     _logger.info('Configuring session: $sourceLanguage→$targetLanguage');
     
-    // Send session configuration to OpenAI Realtime API
+    // Send session configuration to OpenAI Realtime API using configurable parameters
     await session.sendMessage({
       'type': 'session.update',
       'session': {
         'modalities': ['text', 'audio'],
         'instructions': 'You are a real-time translator. Translate from $sourceLanguage to $targetLanguage. '
                       'Respond only with the translated content, no explanations or additional text.',
-        'voice': 'alloy',
-        'input_audio_format': 'pcm16',
-        'output_audio_format': 'pcm16',
+        'voice': _sessionConfig.voice,
+        'input_audio_format': _sessionConfig.inputAudioFormat,
+        'output_audio_format': _sessionConfig.outputAudioFormat,
         'input_audio_transcription': {
           'model': 'whisper-1',
           'language': sourceLanguage,
         },
         'turn_detection': {
           'type': 'server_vad',
-          'threshold': 0.5,
-          'prefix_padding_ms': 300,
-          'silence_duration_ms': 200,
+          'threshold': _sessionConfig.vadThreshold,
+          'prefix_padding_ms': _sessionConfig.vadPrefixPaddingMs,
+          'silence_duration_ms': _sessionConfig.vadSilenceDurationMs,
         },
         'tools': [],
         'tool_choice': 'none',
-        'temperature': 0.6,
-        'max_response_output_tokens': 4096,
+        'temperature': _sessionConfig.temperature,
+        'max_response_output_tokens': _sessionConfig.maxResponseOutputTokens,
       },
     });
     
@@ -274,7 +339,7 @@ class RealtimeSessionManager {
     _logger.warning('${direction.name} session failed, attempting reconnection');
     
     try {
-      // Get fresh token for reconnection
+      // Get fresh token for reconnection (separate token for security)
       final token = await _tokenService.getToken();
       
       // Reconnect the failed session
@@ -321,6 +386,10 @@ class RealtimeSessionManager {
   /// [direction] - Translation direction (A→B or B→A)
   /// Sets up audio capture for the active session
   Future<void> startTranslation(SessionDirection direction) async {
+    if (_isDisposed) {
+      throw StateError('Session manager has been disposed');
+    }
+    
     if (!isReady) {
       throw StateError('Sessions not ready for translation');
     }
@@ -342,7 +411,7 @@ class RealtimeSessionManager {
 
   /// Stop active translation
   Future<void> stopTranslation() async {
-    if (_activeDirection == null) return;
+    if (_isDisposed || _activeDirection == null) return;
     
     _logger.info('Stopping translation');
     
@@ -386,18 +455,44 @@ class RealtimeSessionManager {
 
   /// Close both sessions and cleanup resources
   Future<void> close() async {
+    if (_isDisposed) {
+      _logger.warning('Session manager already disposed');
+      return;
+    }
+    
+    _isDisposed = true;
     _logger.info('Closing Realtime session manager');
     
     try {
-      // Cancel all subscriptions
-      await _sessionABMessages?.cancel();
-      await _sessionABState?.cancel();
-      await _sessionBAMessages?.cancel();
-      await _sessionBAState?.cancel();
+      // Stop any active translations first
+      await stopTranslation();
       
-      // Close both sessions
-      await _sessionAB?.close();
-      await _sessionBA?.close();
+      // Cancel all subscriptions with timeout to prevent hanging
+      final cancelFutures = <Future>[
+        _sessionABMessages?.cancel() ?? Future.value(),
+        _sessionABState?.cancel() ?? Future.value(),
+        _sessionBAMessages?.cancel() ?? Future.value(),
+        _sessionBAState?.cancel() ?? Future.value(),
+      ];
+      
+      // Wait for cancellations with timeout
+      await Future.wait(cancelFutures)
+          .timeout(const Duration(seconds: 5), onTimeout: () {
+        _logger.warning('Subscription cancellation timed out');
+        return <dynamic>[];
+      });
+      
+      // Close both sessions with timeout
+      final closeFutures = <Future>[
+        _sessionAB?.close() ?? Future.value(),
+        _sessionBA?.close() ?? Future.value(),
+      ];
+      
+      await Future.wait(closeFutures)
+          .timeout(const Duration(seconds: 10), onTimeout: () {
+        _logger.warning('Session close timed out');
+        return <dynamic>[];
+      });
       
       // Clear references
       _sessionAB = null;
@@ -405,9 +500,15 @@ class RealtimeSessionManager {
       _activeDirection = null;
       
       // Close stream controllers
-      await _messageController.close();
-      await _statusController.close();
-      await _remoteStreamController.close();
+      if (!_messageController.isClosed) {
+        await _messageController.close();
+      }
+      if (!_statusController.isClosed) {
+        await _statusController.close();
+      }
+      if (!_remoteStreamController.isClosed) {
+        await _remoteStreamController.close();
+      }
       
       // Dispose token service
       _tokenService.dispose();

@@ -204,6 +204,12 @@ parli/
 - **Backend Security**: Rate limiting, CORS, input validation
 - **Development**: Use `.env.example` files with mock/placeholder values
 
+#### OpenAI API Key Configuration
+- **Development Environment**: OpenAI API key is located at `~/.apikeys/openai`
+- **Token Service**: Backend reads from this location for development/testing
+- **Production**: Use secure environment variables or secret management system
+- **Testing**: This key enables full end-to-end testing of dual Realtime sessions
+
 ### Claude Code Integration Guidelines
 
 When working with this mono-repo, Claude should:

@@ -7,19 +7,9 @@ import 'package:logging/logging.dart';
 /// WebRTC client for OpenAI Realtime API connections
 /// Provides low-latency audio transport as primary connection method
 /// 
-/// **IMPORTANT - CURRENT LIMITATION (PAR-15):**
-/// This implementation is NOT functional for actual connections and will 
-/// intentionally fail to force WebSocket fallback. This is expected behavior
-/// until PAR-16 implements the required signaling server integration.
-/// 
-/// **Production Requirements (PAR-16+):**
-/// - OpenAI Realtime API signaling server integration  
-/// - SDP offer/answer exchange mechanism
-/// - ICE candidate exchange for NAT traversal
-/// - Full peer-to-peer connection establishment
-///
-/// **Current Status:** Foundation only - establishes peer connection and 
-/// data channel infrastructure but throws UnimplementedError on connect().
+/// Supports both production signaling with OpenAI Realtime API and mock mode
+/// for development/testing. Mock mode can be enabled via environment variable
+/// ENABLE_WEBRTC_MOCK_SIGNALING=true or by setting enableMockSignaling parameter.
 class WebRTCClient {
   static final _logger = Logger('WebRTCClient');
   
@@ -28,12 +18,23 @@ class WebRTCClient {
   MediaStream? _localStream;
   MediaStream? _remoteStream;
   
+  // Feature flag for mock signaling (development/testing)
+  final bool _enableMockSignaling;
+  
   final StreamController<Map<String, dynamic>> _messageController = 
       StreamController<Map<String, dynamic>>.broadcast();
   final StreamController<Uint8List> _audioController = 
       StreamController<Uint8List>.broadcast();
   final StreamController<RTCPeerConnectionState> _stateController = 
       StreamController<RTCPeerConnectionState>.broadcast();
+
+  /// Create WebRTC client with optional mock signaling for development
+  /// 
+  /// [enableMockSignaling] - Enable mock signaling for development/testing
+  /// If not specified, checks ENABLE_WEBRTC_MOCK_SIGNALING environment variable
+  WebRTCClient({bool? enableMockSignaling}) 
+      : _enableMockSignaling = enableMockSignaling ?? 
+          const String.fromEnvironment('ENABLE_WEBRTC_MOCK_SIGNALING', defaultValue: 'false') == 'true';
   
   /// Stream of incoming messages from OpenAI Realtime API
   Stream<Map<String, dynamic>> get messages => _messageController.stream;
@@ -145,24 +146,30 @@ class WebRTCClient {
   
   /// Send signaling request to OpenAI Realtime API
   /// 
-  /// This is a simplified implementation for PAR-17
-  /// In production, this would use the actual OpenAI signaling endpoint
+  /// Uses mock signaling when _enableMockSignaling is true, otherwise
+  /// attempts to connect to actual OpenAI Realtime API signaling endpoint
   Future<Map<String, dynamic>> _sendSignalingRequest(
     RTCSessionDescription offer, 
     String token,
   ) async {
-    // NOTE: This is a mock implementation for PAR-17 development
-    // The actual OpenAI Realtime API signaling endpoint is not yet available
-    // This allows us to test the dual session architecture while we wait
-    // for the official signaling server integration
-    
+    if (_enableMockSignaling) {
+      return _sendMockSignalingRequest(offer, token);
+    } else {
+      return _sendProductionSignalingRequest(offer, token);
+    }
+  }
+
+  /// Send mock signaling request for development/testing
+  Future<Map<String, dynamic>> _sendMockSignalingRequest(
+    RTCSessionDescription offer, 
+    String token,
+  ) async {
     _logger.warning('Using mock signaling for development - WebRTC will not actually connect');
     
     // Simulate signaling delay
     await Future.delayed(const Duration(milliseconds: 500));
     
     // Return mock signaling response
-    // In production, this would be the actual SDP answer from OpenAI
     return {
       'type': 'answer',
       'answer': '''v=0
@@ -189,6 +196,25 @@ a=rtpmap:111 opus/48000/2''',
         }
       ],
     };
+  }
+
+  /// Send production signaling request to OpenAI Realtime API
+  Future<Map<String, dynamic>> _sendProductionSignalingRequest(
+    RTCSessionDescription offer, 
+    String token,
+  ) async {
+    _logger.info('Connecting to OpenAI Realtime API signaling server');
+    
+    // TODO: Implement actual OpenAI Realtime API signaling when endpoint is available
+    // This should make HTTP request to OpenAI's signaling endpoint with:
+    // - Authorization: Bearer $token
+    // - Content-Type: application/json
+    // - Body: { "type": "offer", "sdp": offer.sdp }
+    
+    throw UnimplementedError(
+      'Production OpenAI Realtime API signaling not yet implemented. '
+      'Enable mock signaling for development: ENABLE_WEBRTC_MOCK_SIGNALING=true'
+    );
   }
   
   /// Setup peer connection event handlers

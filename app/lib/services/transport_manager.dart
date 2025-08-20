@@ -69,14 +69,8 @@ class TransportManager {
   /// 
   /// Automatically fetches ephemeral token from backend service
   /// [preferWebSocket] - Force WebSocket usage (for travel mode)
-  /// [languageA] - Source language for dual session mode (e.g., 'en')
-  /// [languageB] - Target language for dual session mode (e.g., 'zh-CN')
-  /// [useDualSessions] - Enable dual Realtime sessions for bidirectional translation
   Future<void> connect({
     bool preferWebSocket = false,
-    String? languageA,
-    String? languageB,
-    bool useDualSessions = false,
   }) async {
     if (_isConnecting) {
       throw StateError('Connection already in progress');
@@ -84,45 +78,62 @@ class TransportManager {
     
     _isConnecting = true;
     try {
-      _logger.info('Connecting with transport manager (dualSessions: $useDualSessions)');
-      
-      // Validate dual session parameters
-      if (useDualSessions && (languageA == null || languageB == null)) {
-        throw ArgumentError('Language parameters required for dual session mode');
-      }
-      
-      _useDualSessions = useDualSessions;
+      _logger.info('Connecting with transport manager');
       
       // Fetch fresh token from token service
       final token = await _tokenService.getToken();
       _logger.info('Successfully obtained token from service');
       
-      bool connected = false;
+      _preferredTransport = preferWebSocket ? TransportType.webSocket : TransportType.webrtc;
       
-      if (_useDualSessions) {
-        // Use dual Realtime session manager for bidirectional translation
-        connected = await _connectDualSessions(languageA!, languageB!);
-      } else {
-        // Use traditional single transport approach
-        _preferredTransport = preferWebSocket ? TransportType.webSocket : TransportType.webrtc;
+      // Try preferred transport first
+      bool connected = await _tryConnect(_preferredTransport, token);
+      
+      // Fall back to alternative transport if preferred fails
+      if (!connected) {
+        final fallbackTransport = _preferredTransport == TransportType.webrtc 
+            ? TransportType.webSocket 
+            : TransportType.webrtc;
         
-        // Try preferred transport first
-        connected = await _tryConnect(_preferredTransport, token);
-        
-        // Fall back to alternative transport if preferred fails
-        if (!connected) {
-          final fallbackTransport = _preferredTransport == TransportType.webrtc 
-              ? TransportType.webSocket 
-              : TransportType.webrtc;
-          
-          _logger.info('Preferred transport failed, trying fallback: $fallbackTransport');
-          connected = await _tryConnect(fallbackTransport, token);
-        }
+        _logger.info('Preferred transport failed, trying fallback: $fallbackTransport');
+        connected = await _tryConnect(fallbackTransport, token);
       }
       
       if (!connected) {
         await _handleCompoundFailure();
         throw Exception('Failed to establish connection with any transport');
+      }
+    } finally {
+      _isConnecting = false;
+    }
+  }
+
+  /// Initialize and connect using dual Realtime sessions for bidirectional translation
+  /// 
+  /// [languageA] - Source language (e.g., 'en')  
+  /// [languageB] - Target language (e.g., 'zh-CN')
+  /// [preferWebSocket] - Force WebSocket usage (for travel mode)
+  Future<void> connectDualSessions({
+    required String languageA,
+    required String languageB,
+    bool preferWebSocket = false,
+  }) async {
+    if (_isConnecting) {
+      throw StateError('Connection already in progress');
+    }
+    
+    _isConnecting = true;
+    try {
+      _logger.info('Connecting with dual Realtime sessions ($languageA↔$languageB)');
+      
+      _useDualSessions = true;
+      
+      // Use dual Realtime session manager for bidirectional translation
+      final connected = await _connectDualSessions(languageA, languageB);
+      
+      if (!connected) {
+        await _handleCompoundFailure();
+        throw Exception('Failed to establish dual session connection');
       }
     } finally {
       _isConnecting = false;
@@ -363,7 +374,7 @@ class TransportManager {
   Future<void> sendMessage(Map<String, dynamic> message) async {
     if (_useDualSessions) {
       // For dual sessions, you need to specify the direction
-      throw StateError('Use sendMessageToSession() for dual session mode');
+      throw ArgumentError('Use sendMessageToSession() for dual session mode');
     }
     
     switch (_activeTransport) {
@@ -392,7 +403,7 @@ class TransportManager {
     SessionDirection direction,
   ) async {
     if (!_useDualSessions) {
-      throw StateError('Dual session mode not enabled');
+      throw UnsupportedError('Dual session mode not enabled');
     }
     
     final sessionManager = _sessionManager;
@@ -437,7 +448,7 @@ class TransportManager {
   /// Start translation in specified direction (dual session mode only)
   Future<void> startTranslation(SessionDirection direction) async {
     if (!_useDualSessions) {
-      throw StateError('Translation direction control only available in dual session mode');
+      throw UnsupportedError('Translation direction control only available in dual session mode');
     }
     
     final sessionManager = _sessionManager;
@@ -451,7 +462,7 @@ class TransportManager {
   /// Stop active translation (dual session mode only)
   Future<void> stopTranslation() async {
     if (!_useDualSessions) {
-      throw StateError('Translation control only available in dual session mode');
+      throw UnsupportedError('Translation control only available in dual session mode');
     }
     
     final sessionManager = _sessionManager;
