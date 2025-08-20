@@ -1,4 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    
+    <!-- Microphone permission for audio recording -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    
     <application
         android:label="parli"
         android:name="${applicationName}"

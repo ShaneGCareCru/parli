@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../services/audio_service.dart';
+import 'waveform_widget.dart';
 
 enum PTTButtonState { idle, pressed, disabled }
 
@@ -35,6 +37,12 @@ class _PTTButtonState extends State<PTTButton>
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
   Timer? _holdTimer;
+  
+  final AudioService _audioService = AudioService();
+  double _currentAmplitude = 0.0;
+  bool _isRecording = false;
+  StreamSubscription<double>? _amplitudeSubscription;
+  StreamSubscription<AudioCaptureState>? _audioStateSubscription;
 
   @override
   void initState() {
@@ -50,11 +58,35 @@ class _PTTButtonState extends State<PTTButton>
       parent: _animationController,
       curve: Curves.easeInOut,
     ));
+    
+    _initializeAudioService();
+  }
+  
+  void _initializeAudioService() async {
+    await _audioService.initialize();
+    
+    _amplitudeSubscription = _audioService.amplitudeStream.listen((amplitude) {
+      if (mounted) {
+        setState(() {
+          _currentAmplitude = amplitude;
+        });
+      }
+    });
+    
+    _audioStateSubscription = _audioService.stateStream.listen((state) {
+      if (mounted) {
+        setState(() {
+          _isRecording = state == AudioCaptureState.recording;
+        });
+      }
+    });
   }
 
   @override
   void dispose() {
     _holdTimer?.cancel();
+    _amplitudeSubscription?.cancel();
+    _audioStateSubscription?.cancel();
     _animationController.dispose();
     super.dispose();
   }
@@ -67,6 +99,9 @@ class _PTTButtonState extends State<PTTButton>
     });
     _animationController.forward();
     widget.onEvent(PTTEvent.press);
+    
+    // Start audio recording immediately on press
+    _startRecording();
     
     // Start hold timer
     _holdTimer = Timer(widget.holdThreshold, () {
@@ -94,7 +129,30 @@ class _PTTButtonState extends State<PTTButton>
       _buttonState = PTTButtonState.idle;
     });
     _animationController.reverse();
+    
+    // Stop audio recording on release
+    _stopRecording();
+    
     widget.onEvent(PTTEvent.release);
+  }
+  
+  void _startRecording() async {
+    try {
+      final success = await _audioService.startRecording();
+      if (!success) {
+        debugPrint('Failed to start recording');
+      }
+    } catch (e) {
+      debugPrint('Error starting recording: $e');
+    }
+  }
+  
+  void _stopRecording() async {
+    try {
+      await _audioService.stopRecording();
+    } catch (e) {
+      debugPrint('Error stopping recording: $e');
+    }
   }
 
   Color get _currentColor {
@@ -134,15 +192,23 @@ class _PTTButtonState extends State<PTTButton>
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  if (widget.icon != null)
+                  if (widget.icon != null && !_isRecording)
                     Icon(
                       widget.icon,
                       color: Colors.white,
                       size: 32,
                     ),
+                  if (_isRecording)
+                    WaveformWidget(
+                      amplitude: _currentAmplitude,
+                      color: Colors.white,
+                      height: 32,
+                      width: 80,
+                      isActive: _isRecording,
+                    ),
                   const SizedBox(height: 4),
                   Text(
-                    widget.label,
+                    _isRecording ? "Recording..." : widget.label,
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 14,
